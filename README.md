@@ -1,4 +1,10 @@
 # Brane IDE
+Welcome to the repository about the Brane IDE in JupyterLab!
+
+This repository contains the extensions and kernels necessary to connect to a Brane instance and run BraneScript or Bakery remotely.
+
+> Unfortunately, the Bakery kernel is unsupported at the moment. The remainder of this README (and the rest of the repository) focusses on the BraneScript kernel only.
+
 
 ## Installation
 To install the BraneScript and Bakery kernels for the Brane framework, you first have to install Docker in which the JupyterLab server will run.
