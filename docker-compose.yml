@@ -2,18 +2,19 @@ version: '3.5'
 
 services:
   brane-ide:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    container_name: brane-ide
+    image: brane-ide
     ports:
-      - "127.0.0.1:8888:8888"
+    - "127.0.0.1:8888:8888"
     restart: always
     privileged: true
+    volumes:
+    - "${BRANE_NOTEBOOK_DIR}:/home/jovyan/notebooks"
     environment:
       JUPYTER_ENABLE_LAB: "yes"
       BRANE_MOUNT_DFS: redis
+      BRANE_DRV_URL: "${BRANE_DRV_URL}"
 
 networks:
   default:
-    external:
-      name: kind
+    name: brane

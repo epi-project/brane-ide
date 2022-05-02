@@ -255,3 +255,7 @@ secrets.yml
 vault.yml
 venv
 yarn.lock
+
+
+# Ignore the notebooks dir
+notebooks/*

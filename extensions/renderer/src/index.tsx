@@ -4,7 +4,7 @@ import { Widget } from '@lumino/widgets';
 import Renderer from './component';
 
 const MIME_TYPE = 'application/vnd.brane.invocation+json';
-const CLASS_NAME = 'brane-invocation-renderer';
+// const CLASS_NAME = 'brane-invocation-renderer';
 
 /**
  * A widget for rendering the status of a Brane invocation.
@@ -18,12 +18,12 @@ export class RendererWidget extends Widget implements IRenderMime.IRenderer {
 
         this._mimeType = options.mimeType;
         this._renderer = null;
-        this.addClass(CLASS_NAME);
+        // this.addClass(CLASS_NAME);
+        // this.addClass("jp-RenderedText");
     }
 
     renderModel(model: IRenderMime.IMimeModel): Promise<void> {
         const data = model.data[this._mimeType] as JSONObject;
-
         return new Promise((resolve) => {
             if (!this._renderer) {
                 this._renderer = new Renderer(data, this.node, resolve);

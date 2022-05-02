@@ -1,13 +1,14 @@
 import { JSONObject } from '@lumino/coreutils';
 import * as ReactDOM from 'react-dom';
 import * as React from 'react';
-import { Tab, Tabs, TabList, TabPanel } from 'react-tabs';
-import BarLoader from "react-spinners/BarLoader";
+// import { Tab, Tabs, TabList, TabPanel } from 'react-tabs';
+// import BarLoader from "react-spinners/BarLoader";
 
 type Props = {
     inProgress: boolean;
-    output: string;
-    bytecode: string;
+    stdout: string;
+    stderr: string;
+    debug: string;
 }
 
 class Renderer {
@@ -27,7 +28,7 @@ class Renderer {
      * @param callback
      */
     update(invocation: JSONObject, callback: Function) {
-        console.log("ReactApp: update()");
+        // console.log("ReactApp: update()");
 
         if (invocation.status != this._invocation.status) {
             this._invocation = invocation;
@@ -41,13 +42,15 @@ class Renderer {
      */
     deriveProps(invocation: JSONObject): Props {
         const inProgress = !(invocation["done"] as boolean);
-        const output = invocation["output"] as string;
-        const bytecode = invocation["bytecode"] as string;
+        const stdout = invocation["stdout"] as string;
+        const stderr = invocation["stderr"] as string;
+        const debug = invocation["debug"] as string;
 
         return {
             inProgress,
-            output,
-            bytecode,
+            stdout,
+            stderr,
+            debug,
         };
     }
 
@@ -56,11 +59,11 @@ class Renderer {
      * @param callback
      */
     _render(callback: Function) {
-        console.log("ReactApp: _render()");
-        const { inProgress, output, bytecode } = this.deriveProps(this._invocation);
+        // console.log("ReactApp: _render()");
+        const { inProgress, stdout, stderr, debug } = this.deriveProps(this._invocation);
 
         ReactDOM.render(
-            <App inProgress={inProgress} output={output} bytecode={bytecode} />,
+            <App inProgress={inProgress} stdout={stdout} stderr={stderr} debug={debug} />,
             this._container,
             () => callback(),
         );
@@ -72,37 +75,57 @@ class App extends React.Component<Props> {
      *
      */
     render() {
-        console.log("App: render()");
-        const bytecode_opcodes = this.props.bytecode.split("\n").filter(x => x.length > 0);
-        const bytecode_list_items = [];
+        // console.log("App: render()");
 
-        for (let opcode of bytecode_opcodes) {
-            bytecode_list_items.push(<li key={opcode}>{opcode}</li>);
+        // If any debug messages, log to console
+        if (this.props.debug.length > 0) { console.debug("Remote: " + this.props.debug); }
+
+        // Otherwise, if not done, show the status indicator
+        let to_write: JSX.Element[] = [];
+        // if (this.props.inProgress) {
+        //     to_write.push(
+        //         <div className="invocation-renderer__output">
+        //             <BarLoader color="#000" css="display: block" width={54} height={4} />
+        //         </div>
+        //     );
+        // }
+
+        // Otherwise, if any stdout, write it
+        if (this.props.stdout.length > 0) {
+            to_write.push(
+                <div className="jp-RenderedText" data-mime-type="application/vnd.jupyter.stdout">
+                    <pre>{this.props.stdout}</pre>
+                </div>
+            );
         }
 
-        return (
-            <Tabs>
-                <TabList>
-                    <Tab>Output</Tab>
-                    <Tab>Bytecode</Tab>
-                </TabList>
+        // Finally, if any stderr, write it
+        if (this.props.stderr.length > 0) {
+            to_write.push(
+                <div className="jp-RenderedText" data-mime-type="application/vnd.jupyter.stderr">
+                    <pre>{this.props.stderr}</pre>
+                </div>
+            );
+        }
 
-                <TabPanel>
-                    <div className="invocation-renderer__output">
-                        {this.props.inProgress
-                          ? <BarLoader color="#000" css="display: block" width={54} height={4} />
-                          : this.props.output
-                        }
-                    </div>
-                </TabPanel>
+        // If there is anything to render, choose the appropriate wrapper type
+        if (to_write.length == 1) {
+            return to_write[0];
+        } else if (to_write.length == 2) {
+            return <div>
+                {to_write[0]}
+                {to_write[1]}
+            </div>;
+        } else if (to_write.length == 3) {
+            return <div>
+                {to_write[0]}
+                {to_write[1]}
+                {to_write[2]}
+            </div>;
+        }
 
-                <TabPanel>
-                    <div className="invocation-renderer__bytecode">
-                        <ul>{bytecode_list_items}</ul>
-                    </div>
-                </TabPanel>
-            </Tabs>
-        );
+        // Return nothing
+        return [];
     }
 }
 

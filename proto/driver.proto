@@ -1,0 +1,25 @@
+syntax = "proto3";
+package driver;
+
+service DriverService {
+    rpc CreateSession (CreateSessionRequest) returns (CreateSessionReply);
+    rpc Execute (ExecuteRequest) returns (stream ExecuteReply);
+}
+
+message CreateSessionRequest { }
+
+message CreateSessionReply {
+    string uuid = 1;
+}
+
+message ExecuteRequest {
+    string uuid = 1;
+    string input = 2;
+}
+
+message ExecuteReply {
+    bool close = 1;
+    optional string debug = 2;
+    optional string stderr = 3;
+    optional string stdout = 4;
+}

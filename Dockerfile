@@ -1,5 +1,5 @@
 # 584f43f06586: JupyterLab 3.0.14
-FROM jupyter/minimal-notebook:lab-3.0.16
+FROM jupyter/minimal-notebook:lab-3.0.14
 
 USER root
 WORKDIR /
@@ -22,15 +22,15 @@ RUN pip install \
     grpcio-tools==1.37.0 \
     grpcio==1.37.0
 
-COPY ./brane-ide/kernels /kernels
-COPY ./brane-ide/extensions /extensions
+COPY ./kernels /kernels
+COPY ./extensions /extensions
 
 WORKDIR /kernels/bscript
 RUN python setup.py install \
  && python install.py
 
 WORKDIR /
-RUN jupyter labextension install extensions/renderer
+# RUN jupyter labextension install extensions/brane_logger
 
 RUN rmdir "$HOME/work"
 
