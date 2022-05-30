@@ -30,19 +30,25 @@ RUN python setup.py install \
  && python install.py
 
 WORKDIR /
-# RUN jupyter labextension install extensions/brane_logger
 
-RUN rmdir "$HOME/work"
+# Prepare the home folder
+RUN rmdir "$HOME/work" \
+ && mkdir -p "${HOME}/data" \
+ && chown jovyan:users "${HOME}/data" \
+ && chmod 744 "${HOME}/data" \
+ && mkdir -p "${HOME}/notebooks" \
+ && chown jovyan:users "${HOME}/notebooks" \
+ && chmod 744 "${HOME}/notebooks"
 
-# Mount DFS before starting Jupyter (start-notebook.sh).
-RUN mkdir -p "${HOME}/data" \
- && printf '%s\n' "#!/usr/bin/env bash" >> ./entrypoint.sh \
- && printf '%s\n' "/juicefs mount -d \${BRANE_MOUNT_DFS} ${HOME}/data" >> ./entrypoint.sh \
- && printf '%s\n' "cd ${HOME}" >> ./entrypoint.sh \
+# Write an entrypoint script to mount the DFS and add the anaconda bin to PATH
+RUN printf '%s\n' "#!/usr/bin/env bash" >> ./entrypoint.sh \
+ && printf '%s\n' "/juicefs mount -d \"\${BRANE_MOUNT_DFS}\" \"${HOME}/data\"" >> ./entrypoint.sh \
+ && printf '%s\n' "cd \"${HOME}\"" >> ./entrypoint.sh \
  && printf '%s\n' "su jovyan<<'EOF'" >> ./entrypoint.sh \
  && printf '%s\n' "export PATH=\"/opt/conda/bin:$PATH\"" >> ./entrypoint.sh \
  && printf '%s\n' "tini -g -- start-notebook.sh" >> ./entrypoint.sh \
  && printf '%s\n' "EOF" >> ./entrypoint.sh \
  && chmod +x ./entrypoint.sh
 
+# Finally, mark the entrypoint as run
 ENTRYPOINT [ "./entrypoint.sh" ]

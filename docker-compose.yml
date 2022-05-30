@@ -12,7 +12,7 @@ services:
     - "${BRANE_NOTEBOOK_DIR}:/home/jovyan/notebooks"
     environment:
       JUPYTER_ENABLE_LAB: "yes"
-      BRANE_MOUNT_DFS: redis
+      BRANE_MOUNT_DFS: "${BRANE_MOUNT_DFS}"
       BRANE_DRV_URL: "${BRANE_DRV_URL}"
 
 networks:

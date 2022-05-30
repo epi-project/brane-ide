@@ -1,12 +1,17 @@
 # Read CLI first
-ifndef BRANE_INSTANCE
+ifndef BRANE_DRV
 # Remember, the kernel lives in a container so using localhost has no effect
-BRANE_INSTANCE := "brane-drv:50053"
+BRANE_DRV := brane-drv:50053
+endif
+
+ifndef BRANE_MOUNT_DFS
+# Remember, the kernel lives in a container so using localhost has no effect
+BRANE_MOUNT_DFS := redis://aux-redis
 endif
 
 ifndef BRANE_NOTEBOOK_DIR
 # Remember, the kernel lives in a container so using localhost has no effect
-BRANE_NOTEBOOK_DIR := "./notebooks"
+BRANE_NOTEBOOK_DIR := ./notebooks
 endif
 
 
@@ -55,8 +60,8 @@ build-image:
 
 start-ide: build-image
 	@mkdir -p "$(BRANE_NOTEBOOK_DIR)"
-	@echo "Running JupyterLab to connect to Brane Instance @ $(BRANE_INSTANCE)"
-	BRANE_DRV_URL="$(BRANE_INSTANCE)" BRANE_NOTEBOOK_DIR="$(BRANE_NOTEBOOK_DIR)" COMPOSE_IGNORE_ORPHANS=1 docker-compose -p brane-ide -f docker-compose.yml up -d
+	@echo "Running JupyterLab to connect to Brane Instance @ $(BRANE_DRV)"
+	BRANE_DRV_URL="$(BRANE_DRV)" BRANE_MOUNT_DFS="$(BRANE_MOUNT_DFS)" BRANE_NOTEBOOK_DIR="$(BRANE_NOTEBOOK_DIR)" COMPOSE_IGNORE_ORPHANS=1 docker-compose -p brane-ide -f docker-compose.yml up -d
 	@chmod +x ./get_jupyterlab_token.sh
 	@echo "JupyterLab launched at:"
 	@echo "    $$(./get_jupyterlab_token.sh)"

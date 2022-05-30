@@ -24,15 +24,23 @@ Once installed, you can then launch the containerized JupyterLab environment:
 ```bash
 make start-ide
 ```
-This will launch a new JupyterLab instance that will connect to a Brane instance running at `127.0.0.1:50053`. Additionally, it will mount the `notebook` directory under `./notebook` (**important**, read below why this folder exists).
+This will launch a new JupyterLab instance that will connect to a Brane instance that is running locally. Additionally, it will mount the `notebook` directory under `./notebook` (**important**, read below why this folder exists).
 
-You may change these default properties by giving flags to the `make`-call:
-- `BRANE_INSTANCE=<address>`: Attempts to connect to a Brane instance reachable by the given address. This address _should not_ contain `http://`, and should also include the port of the driver. For example, to connect to the standard port at the host `http://remote-host.com`:
+If your instance is _not_ a local Docker deployment, you should change the endpoints where the notebook connects two using the following two options:
+- `BRANE_DRV=<address>`: Changes the endpoint of the `brane-drv` service that will be used to execute workflows. It's similar to that used in `brane repl --remote` commands, except that this address should _not_ contain `http://`. For example, to connect to the standard `brane-drv` port at the host `http://remote-host.com`:
   ```bash
-  make start-ide BRANE_INSTANCE="remote-host.com:50053"
+  make start-ide BRANE_DRV="remote-host.com:50053"
   ```
-- `BRANE_NOTEBOOK_DIR=<dir>`: The persistent directory for notebook or other project files storage. Any data that you write to another folder is **removed when the container is removed as well.** Any relative path given is relative to the Makefile call, of course.  
-  For example:
+- `BRANE_MOUNT_DFS=<address>`: Changed the endpoint of the distributed filesystem (i.e., the `/data` folder). This address should equal the one given in a Brane instance's `infra.yml` file. The address should start with `redis://<hostname>`, where the port will likely be the default (and thus can be omitted). For example, to connect to the standard port at the host `http://remote-host.com`:
+  ```bash
+  make start-ide BRANE_MOUNT_DFS="redis://remote-host.com"
+  ```
+
+Usually, you'll need to supply both these options with the same address (but different prefix and port).
+
+Aside from that, you can also change some other options using the CLI:
+- `BRANE_NOTEBOOK_DIR=<dir>`: The persistent directory for notebook or other project files storage. You can think of this as 'changing the project directory'. Any data that you write to another folder is **removed when the container is removed as well.**; thus, to keep your notebooks around after you stopped the IDE, write them to the `notebooks` directory.
+  For example, to mount a folder `awesome-brane-project`:
   ```bash
   make start-ide BRANE_NOTEBOOK_DIR="/home/user/awesome-brane-project"
   ```
