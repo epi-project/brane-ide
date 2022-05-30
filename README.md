@@ -11,12 +11,9 @@ To install the BraneScript and Bakery kernels for the Brane framework, you first
 
 To do so, you can follow any of the tutorials for [Ubuntu](https://docs.docker.com/engine/install/ubuntu/), [Debian](https://docs.docker.com/engine/install/debian/), [Arch Linux](https://wiki.archlinux.org/title/docker) or [macOS](https://docs.docker.com/desktop/mac/install/).
 
-Then, install the Docker [buildx]() plugin (you might already have done so when you installed Brane).
+Then, install the Docker [buildx](https://docs.docker.com/buildx/working-with-buildx/#install) plugin (you might already have done so when you installed Brane).
 
-Once setup, you can then build the Docker image:
-```bash
-make brane-ide
-```
+You will also have to have access to a Brane instance, and know where to find it (i.e., its IP-address). If you're testing with a local instance, make sure that you have deployed it (check [the documentation](https://wiki.enablingpersonalizedinterventions.nl/)).
 
 
 ## Running
