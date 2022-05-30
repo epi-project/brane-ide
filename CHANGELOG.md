@@ -3,6 +3,10 @@
 All notable changes to the JupyterLab IDE extension for the Brane framework will be documented in this file.
 
 
+## [0.1.2] - 2022-05-30
+### Fixed
+- Old command `make brane-ide` being accidentally left in the README.md.
+
 ## [0.1.1] - 2022-05-30
 ### Added
 - An extra option to set the `redis` endpoint as required.
