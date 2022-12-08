@@ -1,12 +1,29 @@
 # Read CLI first
-ifndef BRANE_DRV
-# Remember, the kernel lives in a container so using localhost has no effect
-BRANE_DRV := brane-drv:50053
+ifdef DEBUG
+DEBUG := 1
+else
+DEBUG := 0
 endif
 
-ifndef BRANE_MOUNT_DFS
+ifndef BRANEC
+# Define the arguments for its version & architecture
+ifndef VERSION
+VERSION := 1.0.0
+endif
+
+ifndef ARCH
+ARCH := x86_64
+endif
+endif
+
+ifndef BRANE_API
 # Remember, the kernel lives in a container so using localhost has no effect
-BRANE_MOUNT_DFS := redis://aux-redis
+BRANE_API := localhost:50051
+endif
+
+ifndef BRANE_DRV
+# Remember, the kernel lives in a container so using localhost has no effect
+BRANE_DRV := localhost:50053
 endif
 
 ifndef BRANE_NOTEBOOK_DIR
@@ -15,53 +32,21 @@ BRANE_NOTEBOOK_DIR := ./notebooks
 endif
 
 
-.PHONY: install
-
-install: install-packages install-kernels install-extensions
-
-install-packages:
-	pipenv install
-
-install-kernels: \
-	install-bakery-kernel \
-	install-bscript-kernel
-
-install-bakery-kernel:
-	pipenv shell "cd kernels/bakery && python setup.py install && exit" \
- && pipenv shell "cd kernels/bakery && python install.py --sys-prefix && exit"
-
-install-bscript-kernel:
-	pipenv shell "cd kernels/bscript && python setup.py install && exit" \
- && pipenv shell "cd kernels/bscript && python install.py --sys-prefix && exit"
-
-# install-extensions: install-manager install-js9 install-renderer
-install-extensions: install-js9 install-renderer
-
-# install-manager:
-# 	pipenv run -- jupyter labextension install "@jupyter-widgets/jupyterlab-manager"
-
-install-js9:
-	pipenv run -- jupyter labextension install extensions/js9
-
-install-registry:
-	pipenv run -- jupyter labextension install extensions/registry
-
-install-renderer:
-	pipenv run -- jupyter labextension install extensions/renderer
-
-clear:
-	pipenv --rm
-
-generate-grpc:
-	pipenv run -- python -m grpc_tools.protoc --proto_path ./proto --python_out=. --grpc_python_out=. ./proto/driver.proto
-
 build-image:
-	docker build --load -t "brane-ide" -f Dockerfile .
+	@if [[ -z "$(BRANEC)" ]]; then \
+		echo "Building 'brane-ide' image with downloaded 'branec'..."; \
+		docker build --load -t "brane-ide" --target brane-ide-download --build-arg "VERSION=$(VERSION)" --build-arg "ARCH=$(ARCH)" -f Dockerfile .; \
+	else \
+		echo "Building 'brane-ide' image with local 'branec'..."; \
+		mkdir -p ".tmp"; \
+		cp "$(BRANEC)" ".tmp/branec"; \
+		docker build --load -t "brane-ide" --target brane-ide-local --build-arg "SOURCE=.tmp/branec" -f Dockerfile .; \
+	fi
 
 start-ide: build-image
 	@mkdir -p "$(BRANE_NOTEBOOK_DIR)"
 	@echo "Running JupyterLab to connect to Brane Instance @ $(BRANE_DRV)"
-	BRANE_DRV_URL="$(BRANE_DRV)" BRANE_MOUNT_DFS="$(BRANE_MOUNT_DFS)" BRANE_NOTEBOOK_DIR="$(BRANE_NOTEBOOK_DIR)" COMPOSE_IGNORE_ORPHANS=1 docker-compose -p brane-ide -f docker-compose.yml up -d
+	DEBUG="$(DEBUG)" BRANE_API_URL="$(BRANE_API)" BRANE_DRV_URL="$(BRANE_DRV)" BRANE_NOTEBOOK_DIR="$(BRANE_NOTEBOOK_DIR)" docker-compose -p brane-ide -f docker-compose.yml up -d
 	@chmod +x ./get_jupyterlab_token.sh
 	@echo "JupyterLab launched at:"
 	@echo "    $$(./get_jupyterlab_token.sh)"
@@ -69,11 +54,10 @@ start-ide: build-image
 	@echo "Enter this link in your browser to connect to the server."
 
 stop-ide:
-	COMPOSE_IGNORE_ORPHANS=1 docker-compose -p brane-ide -f docker-compose.yml down
+	docker-compose -p brane-ide -f docker-compose.yml down
 
 jupyterlab-token:
 	@docker logs brane-ide 2>&1 \
 	| grep "token=" \
 	| tail -1 \
 	| sed "s#.*token=##"
-

@@ -9,7 +9,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
     autoStart: true,
     activate: (app: JupyterFrontEnd) => {
         // Register the mime type
-        app.
+        // app.
 
         console.log('JupyterLab extension brane_logger is activated!');
     },

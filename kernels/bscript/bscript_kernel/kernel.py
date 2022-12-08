@@ -4,7 +4,7 @@
 # Created:
 #   02 May 2022, 17:34:40
 # Last edited:
-#   02 May 2022, 18:29:37
+#   08 Dec 2022, 17:09:13
 # Auto updated?
 #   Yes
 #
@@ -15,6 +15,10 @@
 
 import sys
 import json
+import os
+import pty
+import select
+import typing
 
 from base64 import b64encode
 from filetype import image_match
@@ -30,11 +34,33 @@ from .driver_pb2_grpc import DriverServiceStub
 
 
 ##### GLOBAL "CONSTANTS" #####
-# Determines the address of the remote Brane instance
+# Determines the address of the remote Brane instance's API
+BRANE_API_URL  = getenv('BRANE_API_URL', 'brane-api:50051')
+# Determines the address of the remote Brane instance's driver
 BRANE_DRV_URL  = getenv('BRANE_DRV_URL', 'brane-drv:50053')
 
 # Determines the container-local path of the data directory
 BRANE_DATA_DIR = getenv('BRANE_DATA_DIR', '/home/jovyan/data')
+
+
+
+
+
+##### HELPER FUNCTIONS #####
+def poll_pid(pid: int) -> bool:
+    """
+    Returns if the process with the given PID is alive.
+
+    Code from: https://stackoverflow.com/a/568285
+    """
+
+    # Sending signal 0 apparently doesn't do anything, but does error if the PID doesn't exist anymore
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    else:
+        return True
 
 
 
@@ -59,11 +85,43 @@ class BraneScriptKernel(Kernel):
         self.driver = DriverServiceStub(insecure_channel(BRANE_DRV_URL))
         self.session_uuid = None
 
+        # Also initialize a running `branec` process in streaming mode
+        print("Spinning up new `branec` executable")
+        # self.handle = pty.Popen(["/branec", "--language", "bscript", "--stream", "--compact", "--data", f"Remote<{BRANE_API_URL}>"], stdin=ptyprocess.PIPE, stdout=ptyprocess.PIPE, stderr=ptyprocess.PIPE, bufsize=1, universal_newlines=True, env={
+        #     "PATH": os.environ["PATH"],
+        # })
+        # TODO: This pty business is horrible, so I think we should just edit `branec` to take in something else then EOF...
+        (self.branec_pid, self.branec_fd) = pty.fork(["/branec", "--language", "bscript", "--stream", "--compact", "--data", f"Remote<{BRANE_API_URL}>"])
+
     def do_execute(self, code, silent, store_history=True, user_expressions=None, allow_stdin=False):
         # Preprocess the code by quitting if empty and otherwise processing magic statements
         if not code.strip():
             return self.complete()
         code = self.intercept_magic(code)
+
+        # Compile the code first
+        res = self.compile(code)
+        if res is None:
+            # An error has already been provided to the user
+            return self.complete()
+        (code, warnings) = res
+
+        # Handle any errors
+        self.send_status_json({
+            "done": False,
+            "stdout": f"Compiled code: \"{code}\"",
+            "stderr": "",
+            "debug": "",
+            "value": None,
+        })
+        if len(warnings) > 0:
+            self.send_status_json({
+                "done": False,
+                "stdout": "",
+                "stderr": f"{warnings}",
+                "debug": "",
+                "value": None,
+            })
 
         # If we have no session attached yet, attach one
         if self.session_uuid is None:
@@ -90,7 +148,8 @@ class BraneScriptKernel(Kernel):
                         "done": status["done"],
                         "stdout": "",
                         "stderr": f"{e}",
-                        "debug": ""
+                        "debug": "",
+                        "value": None,
                     })
                     continue
                 if file is not None:
@@ -110,7 +169,8 @@ class BraneScriptKernel(Kernel):
                 "done": True,
                 "stdout": "",
                 "stderr": e.details(),
-                "debug": ""
+                "debug": "",
+                "value": None,
             })
 
         # Done
@@ -147,6 +207,13 @@ class BraneScriptKernel(Kernel):
         if status["debug"] is not None and len(status["debug"]) > 0:
             print(f'Remote: {status["debug"]}')
             sys.stdout.flush()
+
+        # If it's a value, show that
+        if status["value"] is not None and len(status["value"]) > 0:
+            self.send_response(self.iopub_socket, 'stream', {
+                'name': 'stdout',
+                'text': f'Workflow returned result: {status["value"]}',
+            })
 
 
     def complete(self):
@@ -192,6 +259,73 @@ class BraneScriptKernel(Kernel):
 
         # Return the code minus the stripped magic lines
         return result
+
+    def compile(self, code: str) -> typing.Optional[tuple[str, str]]:
+        """
+        Compiles the given code using the `branec` tool.
+        Returns a JSON string that represents the compiled workflow.
+
+        # Arguments
+        - `code`: The source code to compile.
+        """
+
+        # Assert it didn't die too early
+        if not poll_pid(self.branec_pid):
+            err = f"`branec` process terminated with exit code {os.waitpid(self.branec_pid, 0)[1]}"
+            if len(select.select([ self.branec_fd ], [], [], 0)[0]) > 0:
+                err += f": {os.read(self.branec_fd, 4000000)}"
+            raise RuntimeError(err)
+
+        # Feed the code to the compiler
+        codeline = code.replace('\n', '\\n')
+        self.send_status_json({"done": False, "stdout": f"Sending '{codeline}' to branec", "stderr": "", "debug": "", "value": None})
+        self.handle.stdin.write(f"{code}\n")
+
+        # Read its result until we see '---END---'
+        self.send_status_json({"done": False, "stdout": "Reading compiler reply", "stderr": "", "debug": "", "value": None})
+        stdout = ""
+        stderr = ""
+        while True:
+            # Block until either of the streams reports something available
+            self.send_status_json({"done": False, "stdout": "Waiting for reply to become available...", "stderr": "", "debug": "", "value": None})
+            readable, _, _ = select.select([ self.handle.stdout.fileno(), self.handle.stderr.fileno() ], {}, {}, 30)
+            if len(readable) == 0:
+                raise RuntimeError("`branec` took longer than 30 seconds to come up with a reply")
+
+            # Read both the stdout and stderr lines
+            stop  = False
+            error = False
+            if self.handle.stdout.fileno() in readable:
+                # Read as many lines as we can
+                while len(select.select([ self.handle.stdout.fileno() ], [], [], 0))[0] > 0:
+                    line = self.handle.stdout.readline().strip()
+                    stdout += line
+                    # If the line indicates a stop, do so
+                    lineline = line.replace("\n", "\\n")
+                    self.send_status_json({"done": False, "stdout": f"> {lineline}", "stderr": "", "debug": "", "value": None})
+                    if line == "---END---" or line == "---ERROR---":
+                        stop = True
+                    if line == "---ERROR---":
+                        error = True
+            if self.handle.stderr.fileno() in readable:
+                # Read as many lines as we can
+                while len(select.select([ self.handle.stderr.fileno() ], [], [], 0))[0] > 0:
+                    stderr += self.handle.stderr.readline().strip()
+
+            # Stop if necessary
+            if stop:
+                if error:
+                    self.send_status_json({"done": False, "stdout": "", "stderr": stderr, "debug": "", "value": None})
+                    return None
+                break
+
+        # If there is any warning, return that
+        warnings = ""
+        # if len(select.select([ self.handle.stderr.fileno() ], [], [], 0)[0]) > 0:
+        #     warnings += self.handle.stderr.read()
+
+        # Return the parsed thing
+        return (stdout, warnings)
 
 
     def attach(self, session_uuid):

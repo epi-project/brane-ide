@@ -28,15 +28,11 @@ If your instance is _not_ a local Docker deployment, you should change the endpo
   ```bash
   make start-ide BRANE_DRV="remote-host.com:50053"
   ```
-- `BRANE_MOUNT_DFS=<address>`: Changed the endpoint of the distributed filesystem (i.e., the `/data` folder). This address should equal the one given in a Brane instance's `infra.yml` file. The address should start with `redis://<hostname>`, where the port will likely be the default (and thus can be omitted). For example, to connect to the standard port at the host `http://remote-host.com`:
-  ```bash
-  make start-ide BRANE_MOUNT_DFS="redis://remote-host.com"
-  ```
 
 Usually, you'll need to supply both these options with the same address (but different prefix and port).
 
 Aside from that, you can also change some other options using the CLI:
-- `BRANE_NOTEBOOK_DIR=<dir>`: The persistent directory for notebook or other project files storage. You can think of this as 'changing the project directory'. Any data that you write to another folder is **removed when the container is removed as well.**; thus, to keep your notebooks around after you stopped the IDE, write them to the `notebooks` directory.
+- `BRANE_NOTEBOOK_DIR=<dir>`: The persistent directory for notebook or other project files storage. You can think of this as 'changing the project directory'. Any data that you _don't_ write to this folder is **removed when the container is removed as well.**. Thus, to keep your notebooks around after you stopped the IDE, write them to the `notebooks` directory.
   For example, to mount a folder `awesome-brane-project`:
   ```bash
   make start-ide BRANE_NOTEBOOK_DIR="/home/user/awesome-brane-project"
@@ -57,9 +53,9 @@ To use a BraneScript notebook, you can write one or more BraneScript lines in ea
 
 Note that all cells are executed in the same state; in other words, if you run the same cell twice, Brane will remember you doing so. This is most important for `import`-statements, as these can only be run once without any errors occurring.
 
-**Important**: Because the JupyterLab container is not persistent, everything you write will be discarded when you stop the container. To help with this, the Makefile will automatically mount the `notebooks` folder in the container to a persistent folder on disk. Please be aware that any important files should be placed under that folder!
+**Important**: Because the JupyterLab container is not persistent, everything you write will be discarded when you stop the container. To help with this, the Makefile will automatically mounts the `notebooks` folder in the container to a persistent folder on disk. Please be aware that any important files should be placed under that folder!
 
-If you moved files to/from the persistent folder, remember to hit the refresh button (the circle on top of the file list to the left) to be sure that JupyterLab updates its view of the folder.
+If you moved files to/from the persistent folder from your OS, remember to hit the refresh button (the circle on top of the file list to the left) to be sure that JupyterLab updates its view of the folder.
 
 
 ### Showing images
