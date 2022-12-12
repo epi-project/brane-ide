@@ -4,7 +4,7 @@
 # Created:
 #   02 May 2022, 17:34:40
 # Last edited:
-#   08 Dec 2022, 17:09:13
+#   12 Dec 2022, 16:36:53
 # Auto updated?
 #   Yes
 #
@@ -16,8 +16,8 @@
 import sys
 import json
 import os
-import pty
 import select
+import subprocess
 import typing
 
 from base64 import b64encode
@@ -46,26 +46,6 @@ BRANE_DATA_DIR = getenv('BRANE_DATA_DIR', '/home/jovyan/data')
 
 
 
-##### HELPER FUNCTIONS #####
-def poll_pid(pid: int) -> bool:
-    """
-    Returns if the process with the given PID is alive.
-
-    Code from: https://stackoverflow.com/a/568285
-    """
-
-    # Sending signal 0 apparently doesn't do anything, but does error if the PID doesn't exist anymore
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    else:
-        return True
-
-
-
-
-
 ##### KERNEL CLASS #####
 class BraneScriptKernel(Kernel):
     implementation = 'BraneScript'
@@ -87,11 +67,9 @@ class BraneScriptKernel(Kernel):
 
         # Also initialize a running `branec` process in streaming mode
         print("Spinning up new `branec` executable")
-        # self.handle = pty.Popen(["/branec", "--language", "bscript", "--stream", "--compact", "--data", f"Remote<{BRANE_API_URL}>"], stdin=ptyprocess.PIPE, stdout=ptyprocess.PIPE, stderr=ptyprocess.PIPE, bufsize=1, universal_newlines=True, env={
-        #     "PATH": os.environ["PATH"],
-        # })
-        # TODO: This pty business is horrible, so I think we should just edit `branec` to take in something else then EOF...
-        (self.branec_pid, self.branec_fd) = pty.fork(["/branec", "--language", "bscript", "--stream", "--compact", "--data", f"Remote<{BRANE_API_URL}>"])
+        self.handle = subprocess.Popen(["/branec", "--language", "bscript", "--stream", "--compact", "--data", f"Remote<{BRANE_API_URL}>"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1, universal_newlines=True, env={
+            "PATH": os.environ["PATH"],
+        })
 
     def do_execute(self, code, silent, store_history=True, user_expressions=None, allow_stdin=False):
         # Preprocess the code by quitting if empty and otherwise processing magic statements
@@ -270,16 +248,17 @@ class BraneScriptKernel(Kernel):
         """
 
         # Assert it didn't die too early
-        if not poll_pid(self.branec_pid):
-            err = f"`branec` process terminated with exit code {os.waitpid(self.branec_pid, 0)[1]}"
-            if len(select.select([ self.branec_fd ], [], [], 0)[0]) > 0:
-                err += f": {os.read(self.branec_fd, 4000000)}"
+        ret = self.handle.poll()
+        if ret is not None:
+            err = f"`branec` process terminated with exit code {ret}"
+            if len(select.select([ self.handle.stderr.fileno() ], [], [], 0)[0]) > 0:
+                err += f": {self.handle.stderr.read()}"
             raise RuntimeError(err)
 
         # Feed the code to the compiler
         codeline = code.replace('\n', '\\n')
         self.send_status_json({"done": False, "stdout": f"Sending '{codeline}' to branec", "stderr": "", "debug": "", "value": None})
-        self.handle.stdin.write(f"{code}\n")
+        self.handle.stdin.write(f"{code}\n<-- FILE -->\n")
 
         # Read its result until we see '---END---'
         self.send_status_json({"done": False, "stdout": "Reading compiler reply", "stderr": "", "debug": "", "value": None})
@@ -297,7 +276,7 @@ class BraneScriptKernel(Kernel):
             error = False
             if self.handle.stdout.fileno() in readable:
                 # Read as many lines as we can
-                while len(select.select([ self.handle.stdout.fileno() ], [], [], 0))[0] > 0:
+                while len(select.select([ self.handle.stdout.fileno() ], [], [], 0)[0]) > 0:
                     line = self.handle.stdout.readline().strip()
                     stdout += line
                     # If the line indicates a stop, do so
@@ -309,11 +288,11 @@ class BraneScriptKernel(Kernel):
                         error = True
             if self.handle.stderr.fileno() in readable:
                 # Read as many lines as we can
-                while len(select.select([ self.handle.stderr.fileno() ], [], [], 0))[0] > 0:
+                while len(select.select([ self.handle.stderr.fileno() ], [], [], 0)[0]) > 0:
                     stderr += self.handle.stderr.readline().strip()
 
             # Stop if necessary
-            if stop:
+            if len(readable) == 0 and stop:
                 if error:
                     self.send_status_json({"done": False, "stdout": "", "stderr": stderr, "debug": "", "value": None})
                     return None
