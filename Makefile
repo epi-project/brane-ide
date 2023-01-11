@@ -54,7 +54,7 @@ start-ide: build-image
 	@echo "Enter this link in your browser to connect to the server."
 
 stop-ide:
-	docker-compose -p brane-ide -f docker-compose.yml down
+	DEBUG="0" BRANE_API_URL="" BRANE_DRV_URL="" BRANE_NOTEBOOK_DIR="$(BRANE_NOTEBOOK_DIR)" docker-compose -p brane-ide -f docker-compose.yml down
 
 jupyterlab-token:
 	@docker logs brane-ide 2>&1 \
