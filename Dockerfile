@@ -60,4 +60,4 @@ RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
 
 ##### RUN IMAGE #####
 # Start afresh and minimally
-FROM jupyter/minimal-notebook:lab-3.0.14 AS run
+FROM jupyter/minimal-notebook:lab-3.0.14

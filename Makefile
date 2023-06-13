@@ -35,7 +35,7 @@ endif
 # Starts the development environment with all the C++ deps installed
 start-dev:
 	docker build --load --tag brane-ide-dev --target dev -f Dockerfile .
-	docker run -d --name brane-ide-dev -v "$(pwd)":"/source" --entrypoint sleep brane-ide-dev infinity
+	docker run -d --name brane-ide-dev -v ".":"/source" --entrypoint sleep brane-ide-dev infinity
 	@echo "You can now open Code and connect to the 'brane-ide-dev' container"
 
 # Stop the development environment
