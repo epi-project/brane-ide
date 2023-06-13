@@ -32,6 +32,18 @@ BRANE_NOTEBOOK_DIR := ./notebooks
 endif
 
 
+# Starts the development environment with all the C++ deps installed
+start-dev:
+	docker build --load --tag brane-ide-dev --target dev -f Dockerfile .
+	docker run -d --name brane-ide-dev -v "$(pwd)":"/source" --entrypoint sleep brane-ide-dev infinity
+	@echo "You can now open Code and connect to the 'brane-ide-dev' container"
+
+# Stop the development environment
+stop-dev:
+	docker rm --force brane-ide-dev
+	@echo "The 'brane-ide-dev' container has been destroyed. Run 'make start-dev' to start again."
+
+
 build-image:
 	@if [[ -z "$(BRANEC)" ]]; then \
 		echo "Building 'brane-ide' image with downloaded 'branec'..."; \

@@ -3,98 +3,61 @@
 #
 # Implements a Dockerfile for the `brane-ide` image.
 # 
-# Note that this project has three targets:
-# - `brane-ide-base` provides everything of the image up to the point where we need to add the branec thing
-# - `brane-ide-download` provides everything after that point, getting the `branec` by fetching it from the interwebs.
-# - `brane-ide-local` also provides everything from `branec` and later, but by getting `branec` from a local source.
+# There are three layers to this project:
+# - The `dev env` layer, which can be used for development and VS Code's in-container mode.
+# - The `build` layer, which uses that environment to build the project.
+# - The `run` layer, which does not build on the previous layer but provides a fresh, runtime-only environment for the JupyterLab server.
 #
 
 
-##### BASE IMAGE #####
-# 584f43f06586: JupyterLab 3.0.14
-FROM jupyter/minimal-notebook:lab-3.0.14 as brane-ide-base
+##### DEV ENV IMAGE #####
+# We build on C++
+FROM ubuntu:22.04 AS dev
 
-USER root
-WORKDIR /
-
-# Install dependencies
+# Install the dependencies we need
 RUN apt-get update && apt-get install -y \
+    gcc g++ cmake \
     curl \
-    openssl \
  && rm -rf /var/lib/apt/lists/*
 
-# Install kernel dependencies
-RUN pip install \
-    filetype==1.0.7 \
-    grpcio-tools==1.37.0 \
-    grpcio==1.37.0
+# Install mamba
+ADD https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh /Mambaforge.sh
+RUN chmod +x /Mambaforge.sh \
+ && bash /Mambaforge.sh -b -p "${HOME}/conda"
 
-# Prepare the home folder
-RUN rmdir "$HOME/work" \
- && mkdir -p "${HOME}/data" \
- && chown jovyan:users "${HOME}/data" \
- && chmod 744 "${HOME}/data" \
- && mkdir -p "${HOME}/notebooks" \
- && chown jovyan:users "${HOME}/notebooks" \
- && chmod 744 "${HOME}/notebooks"
+# Install the Xeus dependencies
+RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
+ && mamba install cppzmq xtl nlohmann_json xeus-zmq -c conda-forge
 
-# Write an entrypoint script to mount the DFS and add the anaconda bin to PATH
-RUN printf '%s\n' "#!/usr/bin/env bash" >> /entrypoint.sh \
- && printf '%s\n' "cd \"${HOME}\"" >> /entrypoint.sh \
- && printf '%s\n' "su jovyan<<'EOF'" >> /entrypoint.sh \
- && printf '%s\n' "export PATH=\"/opt/conda/bin:\$PATH\"" >> /entrypoint.sh \
- && printf '%s\n' "if [[ \"\$DEBUG\" -eq 1 ]]; then DEBUG_FLAG=' --debug'; else DEBUG_FLAG=''; fi" >> /entrypoint.sh \
- && printf '%s\n' "tini -g -- start-notebook.sh\$DEBUG_FLAG" >> /entrypoint.sh \
- && printf '%s\n' "EOF" >> /entrypoint.sh \
- && chmod +x /entrypoint.sh
+# Prepare the source directory
+RUN mkdir -p /source/build
 
 
 
-##### DOWNLOAD IMAGE #####
-FROM brane-ide-base AS brane-ide-download
 
-# Define the arguments for downloading it
-ARG VERSION=1.0.0
-ARG ARCH=x86_64
 
-# Download branec
-RUN curl -o /branec "https://github.com/epi-project/brane/releases/download/v${VERSION}/branec-linux-${ARCH}" \
- && chmod +x /branec
+##### BUILD IMAGE #####
+# Pickup where we leftoff
+FROM dev AS build
 
-# Copy the source over
-COPY ./kernels /kernels
-COPY ./extensions /extensions
+# Now copy the source
+RUN mkdir -p /source/build
+COPY ./src /source/src
+COPY ./share /source/share
+COPY ./CMakeLists.txt /source/CMakeLists.txt
 
-# Install the kernel
-WORKDIR /kernels/bscript
-RUN python setup.py install \
- && python install.py
-
-WORKDIR /
-
-# Finally, mark the entrypoint as run
-ENTRYPOINT [ "/entrypoint.sh" ]
+# Run the build
+WORKDIR /source/build
+RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
+ && cmake -D CMAKE_INSTALL_PREFIX=$CONDA_PREFIX ../ \
+ && cmake build . \
+ && make \
+ && make install
 
 
 
-##### COPY IMAGE #####
-FROM brane-ide-base AS brane-ide-local
 
-# Define the arguments for where to download it from
-ARG SOURCE
-COPY ${SOURCE} /branec
-RUN chmod +x /branec
 
-# Copy the source over
-COPY ./kernels /kernels
-COPY ./extensions /extensions
-
-# Install the kernel
-WORKDIR /kernels/bscript
-RUN python setup.py install \
- && python install.py
-
-WORKDIR /
-
-# Finally, mark the entrypoint as run
-ENTRYPOINT [ "/entrypoint.sh" ]
+##### RUN IMAGE #####
+# Start afresh and minimally
+FROM jupyter/minimal-notebook:lab-3.0.14 AS run
