@@ -32,9 +32,12 @@ BRANE_NOTEBOOK_DIR := ./notebooks
 endif
 
 
-# Starts the development environment with all the C++ deps installed
-start-dev:
+# Builds the development environmen image
+dev-image:
 	docker build --load --tag brane-ide-dev --target dev -f Dockerfile .
+
+# Starts the development environment with all the C++ deps installed
+start-dev: dev-image
 	docker run -d --name brane-ide-dev -v ".":"/source" --entrypoint sleep brane-ide-dev infinity
 	@echo "You can now open Code and connect to the 'brane-ide-dev' container"
 

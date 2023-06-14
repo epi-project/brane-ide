@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 16:09:11
  * Last edited:
- *   13 Jun 2023, 16:04:29
+ *   14 Jun 2023, 09:57:53
  * Auto updated?
  *   Yes
  *
@@ -17,7 +17,7 @@
 #ifndef CUSTOM_INTERPRETER_HPP
 #define CUSTOM_INTERPRETER_HPP
 
-#include "xeus/xinterpreter.hpp"
+#include <xeus/xinterpreter.hpp>
 #include "nlohmann/json.hpp"
 
 using xeus::xinterpreter;

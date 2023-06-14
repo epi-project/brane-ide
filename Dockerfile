@@ -17,16 +17,16 @@ FROM ubuntu:22.04 AS dev
 # Install the dependencies we need
 RUN apt-get update && apt-get install -y \
     gcc g++ cmake \
-    curl \
  && rm -rf /var/lib/apt/lists/*
 
 # Install mamba
 ADD https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh /Mambaforge.sh
 RUN chmod +x /Mambaforge.sh \
- && bash /Mambaforge.sh -b -p "${HOME}/conda"
+ && bash /Mambaforge.sh -b -p "${HOME}/conda" \
+ && ln -s "${HOME}/conda/etc/profile.d/conda.sh" "/etc/profile.d/conda.sh"
 
 # Install the Xeus dependencies
-RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
+RUN . "${HOME}/conda/etc/profile.d/conda.sh" \
  && mamba install cppzmq xtl nlohmann_json xeus-zmq -c conda-forge
 
 # Prepare the source directory
