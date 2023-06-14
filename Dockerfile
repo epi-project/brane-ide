@@ -16,7 +16,7 @@ FROM ubuntu:22.04 AS dev
 
 # Install the dependencies we need
 RUN apt-get update && apt-get install -y \
-    gcc g++ cmake \
+    gcc g++ cmake git \
  && rm -rf /var/lib/apt/lists/*
 
 # Install mamba
