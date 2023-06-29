@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 17:39:03
  * Last edited:
- *   13 Jun 2023, 16:08:56
+ *   29 Jun 2023, 13:48:24
  * Auto updated?
  *   Yes
  *
@@ -14,8 +14,11 @@
  *   Based on: https://xeus.readthedocs.io/en/latest/kernel_implementation.html
 **/
 
+#include <string>
+#include <unordered_map>
 #include <iostream>
 
+#include "brane/brane_tsk.h"
 #include "custom_interpreter.hpp"
 
 using namespace std;
@@ -29,13 +32,35 @@ const static char* KERNEL_VERSION = "1.0.0";
 
 
 
+/***** GLOBALS *****/
+/// Whether we are in a usable state or not.
+bool errored = false;
+/// The map of dynamically loaded compiler functions.
+Functions* functions;
+/// The global hashmap of sessions to running compilers.
+unordered_map<string, Compiler*> sessions;
+
+
+
+
+
 /***** LIBRARY *****/
 /* Essentially a "start" function that is executed after Kernel creation, and before any request is executed. */
 void custom_interpreter::configure_impl() override {
     // Let's only log for now
     cout << "Initializing BraneScript kernel v" << KERNEL_VERSION << "..." << endl;
 
-    /* TODO */
+    // Load the dynamic functions
+    functions = functions_load("/libbrane_tsk.so");
+    if (functions == NULL) {
+        // We cannot continue!
+        cerr << "Initialization errored." << endl;
+        errored = true;
+        return;
+    }
+
+    // Initialize the sessions map
+    sessions = unordered_map();
 
     // Done
     cout << "Initialization done." << endl;
@@ -43,10 +68,15 @@ void custom_interpreter::configure_impl() override {
 
 /* Essentially a "stop" function that is executed before the kernel is shutdown completely. */
 void shutdown_request_impl() {
-    // Let's only log for now
+    // Only do stuff if not errorred
+    if (errored) { return; }
     cout << "Terminating BraneScript kernel v" << KERNEL_VERSION << "..." << endl;
 
-    /* TODO */
+    // Clean the globals
+    for (pair<string, Compiler*> : sessions) {
+        functions->compiler_free(pair.second);
+    }
+    functions_unload(functions);
 
     // Done
     cout << "Termination complete." << endl;
