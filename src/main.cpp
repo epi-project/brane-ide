@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 16:07:51
  * Last edited:
- *   29 Jun 2023, 11:51:04
+ *   30 Jun 2023, 13:17:37
  * Auto updated?
  *   Yes
  *
@@ -22,17 +22,21 @@ using namespace std;
 
 /***** ENTRYPOINT *****/
 int main(int argc, char* argv[]) {
+    // REad the input
+    if (argc < 3) { cerr << "Usage: " << argv[0] << " <LIBBRANE_TSK_SO_PATH> <BRANE_API_ADDRESS>"; return 1; }
+    const char* so_path     = argv[1];
+    const char* api_address = argv[2];
+
     // Define a piece of BraneScript source code to test
     const char* source = "println(\"Hello, world!\");";
     
     // Load the functions in the .so file
-    const char* so_path = "/libbrane_tsk.so";
     Functions* functions = functions_load(so_path);
     if (functions == nullptr) { return 1; }
 
     // Create the compiler
     Compiler* compiler;
-    Error* error = functions->compiler_new("http://145.109.125.145:50051", &compiler);
+    Error* error = functions->compiler_new(api_address, &compiler);
     if (error != nullptr) {
         functions->error_print_msg(error);
         functions->error_free(error);
@@ -49,13 +53,31 @@ int main(int argc, char* argv[]) {
         functions->error_print_msg(error);
         bool should_exit = functions->error_msg_occurred(error) || functions->error_err_occurred(error);
         functions->error_free(error);
-        if (should_exit) { return 1; }
+        if (should_exit) {
+            functions->compiler_free(compiler);
+            functions_unload(functions);
+            return 1;
+        }
     }
 
     // Print the JSON
     cout << json << endl;
 
+    // Also print the disassembled version
+    char* disas;
+    error = functions->compiler_assemble(json, &disas);
+    if (error != nullptr) {
+        functions->error_print_msg(error);
+        functions->error_free(error);
+        free(json);
+        functions->compiler_free(compiler);
+        functions_unload(functions);
+        return 1;
+    }
+    cout << disas << endl;
+
     // Free everything up and we're done
+    free(disas);
     free(json);
     functions->compiler_free(compiler);
     functions_unload(functions);

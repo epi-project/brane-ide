@@ -4,7 +4,7 @@
  * Created:
  *   14 Jun 2023, 11:49:07
  * Last edited:
- *   29 Jun 2023, 13:40:23
+ *   30 Jun 2023, 13:22:04
  * Auto updated?
  *   Yes
  *
@@ -30,6 +30,8 @@ typedef struct _error Error;
 /* Defines a BraneScript compiler.
  * 
  * Successive snippets can be compiled with the same compiler to retain state of what is already defined and what not.
+ * 
+ * WARNING: Do not access any internals yourself, since there are no guarantees on the internal layout of this struct.
  */
 typedef struct _compiler Compiler;
 
@@ -162,6 +164,18 @@ struct _functions {
      * An [`Error`]-struct that may or may not contain any generated errors. If [`error_err_occurred()`] is true, though, then `wr` will point to [`NULL`].
      */
     Error* (*compiler_compile)(Compiler* compiler, const char* bs, char** wr);
+    /* Re-serializes the given JSON workflow as an assemblied overview of the workflow.
+     * 
+     * This is mainly for display purposes; there is no code to re-interpret the assemblied version.
+     * 
+     * # Arguments
+     * - `wr`: The compiler JSON workflow to disassemble.
+     * - `wa`: The disassembled counterpart to the workflow when done. Will be [`NULL`] if there is an error (which can happen if the input is not valid UTF-8 JSON for a workflow).
+     * 
+     * # Returns
+     * An [`Error`]-struct that may or may not contain any generated errors. If [`error_err_occurred()`] is true, though, then `wa` will point to [`NULL`].
+     */
+    Error* (*compiler_assemble)(const char* wr, char** wa);
 };
 typedef struct _functions Functions;
 
@@ -199,6 +213,7 @@ Functions* functions_load(const char* path) {
     functions->compiler_new = (Error* (*)(const char*, Compiler**)) dlsym(functions->handle, "compiler_new");
     functions->compiler_free = (void (*)(Compiler*)) dlsym(functions->handle, "compiler_free");
     functions->compiler_compile = (Error* (*)(Compiler*, const char*, char**)) dlsym(functions->handle, "compiler_compile");
+    functions->compiler_assemble = (Error* (*)(const char*, char**)) dlsym(functions->handle, "compiler_assemble");
 
     // Done
     return functions;
