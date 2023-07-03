@@ -4,7 +4,7 @@
  * Created:
  *   14 Jun 2023, 11:49:07
  * Last edited:
- *   30 Jun 2023, 13:22:04
+ *   03 Jul 2023, 14:14:58
  * Auto updated?
  *   Yes
  *
@@ -26,6 +26,17 @@
  * WARNING: Do not access any internals yourself, since there are no guarantees on the internal layout of this struct.
  */
 typedef struct _error Error;
+/* Defines an alternative to the [`Error`]-type that can also encode source-related errors.
+ * 
+ * WARNING: Do not access any internals yourself, since there are no guarantees on the internal layout of this struct.
+ */
+typedef struct _source_error SourceError;
+
+/* Defines a BraneScript AST, i.e., compiled source code.
+ * 
+ * WARNING: Do not access any internals yourself, since there are no guarantees on the internal layout of this struct.
+ */
+typedef struct _workflow Workflow;
 
 /* Defines a BraneScript compiler.
  * 
@@ -34,6 +45,14 @@ typedef struct _error Error;
  * WARNING: Do not access any internals yourself, since there are no guarantees on the internal layout of this struct.
  */
 typedef struct _compiler Compiler;
+
+// /* Defines a BRANE instance virtual machine.
+//  * 
+//  * This can run a compiled workflow on a running instance.
+//  * 
+//  * WARNING: Do not access any internals yourself, since there are no guarantees on the internal layout of this struct.
+//  */
+// typedef struct _virtual_machine VirtualMachine;
 
 
 
@@ -65,68 +84,128 @@ struct _functions {
      */
     void (*error_free)(Error* err);
 
-    /* Returns if this error contains a source warning to display or not.
+    /* Prints the error message in this error to stderr.
      * 
      * # Arguments
-     * - `err`: The [`Error`] to check the source warning status of.
+     * - `err`: The [`Error`] to print.
      * 
-     * # Returns
-     * True if [`error_print_warns()`] will print anything, or false otherwise.
+     * # Panics
+     * This function can panic if the given `err` is a NULL-pointer.
      */
-    bool (*error_warn_occurred)(Error* err);
-    /* Returns if this error contains a source error to display or not (and thus whether something went wrong).
-     * 
-     * # Arguments
-     * - `err`: The [`Error`] to check the source error status of.
-     * 
-     * # Returns
-     * True if [`error_print_errs()`] will print anything, or false otherwise.
-     */
-    bool (*error_err_occurred)(Error* err);
-    /* Returns if this error contains a message to display or not (and thus whether something went wrong).
-     * 
-     * # Arguments
-     * - `err`: The [`Error`] to check the message status of.
-     * 
-     * # Returns
-     * True if [`error_print_msg()`] will print anything, or false otherwise.
-     */
-    bool (*error_msg_occurred)(Error* err);
+    void (*error_print_err)(Error* err);
 
-    /* Prints the warnings in this error to stderr.
-     * 
-     * The error struct may contain multiple errors if the source code contained those.
+
+
+    /***** SOURCE ERROR *****/
+    /* Destructor for the SourceError type.
+     *
+     * SAFETY: You _must_ call this destructor yourself whenever you are done with the struct to cleanup any code. _Don't_ use any C-library free!
+     *
+     * # Arguments
+     * - `serr`: The [`SourceError`] to deallocate.
+     */
+    void (*serror_free)(SourceError* serr);
+
+    /* Returns if a source warning has occurred.
      * 
      * # Arguments
-     * - `err`: The [`Error`] to print the source warnings of.
-     * - `file`: Some string describing the source/filename of the source text.
-     * - `source`: The physical source text, as parsed.
+     * - `serr`: The [`SourceError`] struct to inspect.
      * 
      * # Returns
-     * It may be that parsing the given strings as valid UTF-8 fails. In that case, the returned [`Error`] will be non-NULL and describe the error.
-     */
-    Error* (*error_print_warns)(Error* err, const char* file, const char* source);
-    /* Prints the errors in this error to stderr.
+     * True if [`serr_print_swarns`] would print anything, or false otherwise.
      * 
-     * The error struct may contain multiple errors if the source code contained those.
+     * # Panics
+     * This function can panic if the given `serr` is a NULL-pointer.
+     */
+    bool (*serror_has_swarns)(SourceError* serr);
+    /* Returns if a source error has occurred.
      * 
      * # Arguments
-     * - `err`: The [`Error`] to check the source errors of.
+     * - `serr`: The [`SourceError`] struct to inspect.
+     * 
+     * # Returns
+     * True if [`serr_print_serrs`] would print anything, or false otherwise.
+     * 
+     * # Panics
+     * This function can panic if the given `serr` is a NULL-pointer.
+     */
+    bool (*serror_has_serrs)(SourceError* serr);
+    /* Returns if a program error has occurred.
+     * 
+     * # Arguments
+     * - `serr`: The [`SourceError`] struct to inspect.
+     * 
+     * # Returns
+     * True if [`serr_print_err`] would print anything, or false otherwise.
+     * 
+     * # Panics
+     * This function can panic if the given `serr` is a NULL-pointer.
+     */
+    bool (*serror_has_err)(SourceError* serr);
+
+    /* Prints the source warnings in this error to stderr.
+     * 
+     * Note that there may be zero or more warnings at once. To discover if there are any, check [`serror_has_swarns()`].
+     * 
+     * # Arguments
+     * - `serr`: The [`SourceError`] to print the source warnings of.
      * - `file`: Some string describing the source/filename of the source text.
      * - `source`: The physical source text, as parsed.
      * 
-     * # Errors
-     * Note that this function may fail to parse the given `file` and `source` strings as valid UTF-8. In that case, it will not print any source errors, but the fact that it failed to do so instead.
+     * # Panics
+     * This function can panic if the given `serr` is a NULL-pointer, or if `file` or `source` do not point to valid UTF-8 strings.
      */
-    void (*error_print_errs)(Error* err, const char* file, const char* source);
-    /* Prints the non-source related error to stderr.
+    void (*serror_print_swarns)(SourceError* serr, const char* file, const char* source);
+    /* Prints the source errors in this error to stderr.
      * 
-     * This usually indicates a "harder error" that the user did not do with the input source text.
+     * Note that there may be zero or more errors at once. To discover if there are any, check [`serror_has_serrs()`].
      * 
      * # Arguments
-     * - `err`: The [`Error`] to print the message of.
+     * - `serr`: The [`SourceError`] to print the source errors of.
+     * - `file`: Some string describing the source/filename of the source text.
+     * - `source`: The physical source text, as parsed.
+     * 
+     * # Panics
+     * This function can panic if the given `serr` is a NULL-pointer, or if `file` or `source` do not point to valid UTF-8 strings.
      */
-    void (*error_print_msg)(Error* err);
+    void (*serror_print_serrs)(SourceError* serr, const char* file, const char* source);
+    /* Prints the error message in this error to stderr.
+     * 
+     * Note that there may be no error, but only source warnings- or errors. To discover if there is any, check [`serror_has_err()`].
+     * 
+     * # Arguments
+     * - `serr`: The [`SourceError`] to print the error of.
+     * 
+     * # Panics
+     * This function can panic if the given `serr` is a NULL-pointer.
+     */
+    void (*serror_print_err)(SourceError* serr);
+
+
+
+    /***** WORKFLOW *****/
+    /* Destructor for the Workflow.
+     * 
+     * SAFETY: You _must_ call this destructor yourself whenever you are done with the struct to cleanup any code. _Don't_ use any C-library free!
+     * 
+     * # Arguments
+     * - `workflow`: The [`Workflow`] to free.
+     */
+    void (*workflow_free)(Workflow* workflow);
+
+    /* Serializes the workflow by essentially disassembling it.
+     * 
+     * # Arguments
+     * - `workflow`: The [`Workflow`] to disassemble.
+     * - `assembly`: The serialized assembly of the same workflow, as a string. Don't forget to free it! Will be [`NULL`] if there is an error (see below).
+     * 
+     * # Returns
+     * [`Null`] in all cases except when an error occurs. Then, an [`Error`]-struct is returned describing the error. Don't forget this has to be freed using [`error_free()`]!
+     * 
+     * # Panics
+     * This function can panic if the given `workflow` is a NULL-pointer.
+     */
+    Error* (*workflow_disassemble)(Workflow* workflow, char** assembly);
 
 
 
@@ -135,15 +214,18 @@ struct _functions {
      * 
      * # Arguments
      * - `endpoint`: The endpoint (as an address) to read the package & data index from. This is the address of a `brane-api` instance.
-     * - `compiler`: Will point to the newly created [`Compiler`] when done. **Note**: Has to be manually [`free()`](libc::free())ed.
+     * - `compiler`: Will point to the newly created [`Compiler`] when done. Will be [`NULL`] if there is an error (see below).
      * 
      * # Returns
-     * An [`Error`]-struct that may or may not contain any generated errors. If [`error_err_occurred()`] is true, though, then `compiler` will point to [`NULL`].
+     * [`Null`] in all cases except when an error occurs. Then, an [`Error`]-struct is returned describing the error. Don't forget this has to be freed using [`error_free()`]!
+     * 
+     * # Panics
+     * This function can panic if the given `endpoint` does not point to a valid UTF-8 string.
      */
     Error* (*compiler_new)(const char* endpoint, Compiler** compiler);
     /* Destructor for the Compiler.
      * 
-     * SAFETY: You _must_ call this destructor yourself. _Don't_ use any C-library free!
+     * SAFETY: You _must_ call this destructor yourself whenever you are done with the struct to cleanup any code. _Don't_ use any C-library free!
      * 
      * # Arguments
      * - `compiler`: The [`Compiler`] to free.
@@ -152,30 +234,34 @@ struct _functions {
     
     /* Compiles the given BraneScript snippet to the BRANE Workflow Representation.
      * 
-     * Note that the representation is returned as JSON, and not really meant to be inspected from C-code.
-     * Use other functions in this library instead to ensure you are compatible with the latest WR version.
+     * Note that this function changes the `compiler`'s state.
      * 
      * # Arguments
      * - `compiler`: The [`Compiler`] to compile with. Essentially this determines which previous compile state to use.
-     * - `bs`: The raw BraneScript snippet to parse.
-     * - `wr`: Will point to the compiled JSON string when done. **Note**: Has to be manually [`free()`](libc::free())ed.
+     * - `raw`: The raw BraneScript snippet to parse.
+     * - `workflow`: Will point to the compiled AST. Will be [`NULL`] if there is an error (see below).
      * 
      * # Returns
-     * An [`Error`]-struct that may or may not contain any generated errors. If [`error_err_occurred()`] is true, though, then `wr` will point to [`NULL`].
+     * A [`SourceError`]-struct describing the error, if any, and source warnings/errors. Don't forget this has to be freed using [`serror_free()`]!
+     * 
+     * # Panics
+     * This function can panic if the given `compiler` points to NULL, or `endpoint` does not point to a valid UTF-8 string.
      */
-    Error* (*compiler_compile)(Compiler* compiler, const char* bs, char** wr);
-    /* Re-serializes the given JSON workflow as an assemblied overview of the workflow.
-     * 
-     * This is mainly for display purposes; there is no code to re-interpret the assemblied version.
-     * 
-     * # Arguments
-     * - `wr`: The compiler JSON workflow to disassemble.
-     * - `wa`: The disassembled counterpart to the workflow when done. Will be [`NULL`] if there is an error (which can happen if the input is not valid UTF-8 JSON for a workflow).
-     * 
-     * # Returns
-     * An [`Error`]-struct that may or may not contain any generated errors. If [`error_err_occurred()`] is true, though, then `wa` will point to [`NULL`].
-     */
-    Error* (*compiler_assemble)(const char* wr, char** wa);
+    SourceError* (*compiler_compile)(Compiler* compiler, const char* raw, Workflow** workflow);
+
+
+
+    // /***** VIRTUAL MACHINE *****/
+    // /* Constructor for the VirtualMachine.
+    //  * 
+    //  * # Arguments
+    //  * - `api_endpoint`: The BRANE API endpoint to connect to for package information.
+    //  * - `drv_endpoint`: The BRANE driver endpoint to connect to to execute stuff.
+    //  * - `virtual_machine`: Will point to the newly created [`VirtualMachine`] when done. Will be [`NULL`] if there is an error (see below).
+    //  * 
+    //  * # Returns
+    //  * An [`Error`]-struct that may or may not contain any generated errors.
+    //  */
 };
 typedef struct _functions Functions;
 
@@ -202,18 +288,25 @@ Functions* functions_load(const char* path) {
 
     // Load the error symbols
     functions->error_free = (void (*)(Error*)) dlsym(functions->handle, "error_free");
-    functions->error_warn_occurred = (bool (*)(Error*)) dlsym(functions->handle, "error_warn_occurred");
-    functions->error_err_occurred = (bool (*)(Error*)) dlsym(functions->handle, "error_err_occurred");
-    functions->error_msg_occurred = (bool (*)(Error*)) dlsym(functions->handle, "error_msg_occurred");
-    functions->error_print_warns = (Error* (*)(Error*, const char*, const char*)) dlsym(functions->handle, "error_print_warns");
-    functions->error_print_errs = (void (*)(Error*, const char*, const char*)) dlsym(functions->handle, "error_print_errs");
-    functions->error_print_msg = (void (*)(Error*)) dlsym(functions->handle, "error_print_msg");
+    functions->error_print_err = (void (*)(Error*)) dlsym(functions->handle, "error_print_err");
+
+    // Load the source error symbols
+    functions->serror_free = (void (*)(SourceError*)) dlsym(functions->handle, "serror_free");
+    functions->serror_has_swarns = (bool (*)(SourceError*)) dlsym(functions->handle, "serror_has_warns");
+    functions->serror_has_serrs = (bool (*)(SourceError*)) dlsym(functions->handle, "serror_has_serrs");
+    functions->serror_has_err = (bool (*)(SourceError*)) dlsym(functions->handle, "serror_has_err");
+    functions->serror_print_swarns = (void (*)(SourceError*, const char*, const char*)) dlsym(functions->handle, "serror_print_swarns");
+    functions->serror_print_serrs = (void (*)(SourceError*, const char*, const char*)) dlsym(functions->handle, "serror_print_serrs");
+    functions->serror_print_err = (void (*)(SourceError*)) dlsym(functions->handle, "serror_print_err");
+
+    // Load the workflow symbols
+    functions->workflow_free = (void (*)(Workflow*)) dlsym(functions->handle, "workflow_free");
+    functions->workflow_disassemble = (Error* (*)(Workflow*, char**)) dlsym(functions->handle, "workflow_disassemble");
 
     // Load the compiler symbols
     functions->compiler_new = (Error* (*)(const char*, Compiler**)) dlsym(functions->handle, "compiler_new");
     functions->compiler_free = (void (*)(Compiler*)) dlsym(functions->handle, "compiler_free");
-    functions->compiler_compile = (Error* (*)(Compiler*, const char*, char**)) dlsym(functions->handle, "compiler_compile");
-    functions->compiler_assemble = (Error* (*)(const char*, char**)) dlsym(functions->handle, "compiler_assemble");
+    functions->compiler_compile = (SourceError* (*)(Compiler*, const char*, Workflow**)) dlsym(functions->handle, "compiler_compile");
 
     // Done
     return functions;

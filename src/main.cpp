@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 16:07:51
  * Last edited:
- *   30 Jun 2023, 13:17:37
+ *   03 Jul 2023, 14:10:03
  * Auto updated?
  *   Yes
  *
@@ -36,40 +36,37 @@ int main(int argc, char* argv[]) {
 
     // Create the compiler
     Compiler* compiler;
-    Error* error = functions->compiler_new(api_address, &compiler);
-    if (error != nullptr) {
-        functions->error_print_msg(error);
-        functions->error_free(error);
+    Error* err = functions->compiler_new(api_address, &compiler);
+    if (err != nullptr) {
+        functions->error_print_err(err);
+        functions->error_free(err);
         return 1;
     }
 
     // Attempt to compile with it
-    char* json;
-    error = functions->compiler_compile(compiler, source, &json);
-    if (error != nullptr) {
-        Error* err = functions->error_print_warns(error, "<hardcoded>", source);
-        if (err != nullptr) { functions->error_print_msg(err); return 1; }
-        functions->error_print_errs(error, "<hardcoded>", source);
-        functions->error_print_msg(error);
-        bool should_exit = functions->error_msg_occurred(error) || functions->error_err_occurred(error);
-        functions->error_free(error);
-        if (should_exit) {
-            functions->compiler_free(compiler);
-            functions_unload(functions);
-            return 1;
-        }
+    Workflow* workflow;
+    SourceError* serr = functions->compiler_compile(compiler, source, &workflow);
+    functions->serror_print_swarns(serr, "<hardcoded>", source);
+    functions->serror_print_serrs(serr, "<hardcoded>", source);
+    functions->serror_print_err(serr);
+    bool should_exit = functions->serror_has_serrs(serr) || functions->serror_has_err(serr);
+    functions->serror_free(serr);
+    if (should_exit) {
+        cout << "k bye" << endl;
+        functions->compiler_free(compiler);
+        functions_unload(functions);
+        return 1;
     }
 
-    // Print the JSON
-    cout << json << endl;
-
-    // Also print the disassembled version
+    // Print the disassembled version of the workflow
     char* disas;
-    error = functions->compiler_assemble(json, &disas);
-    if (error != nullptr) {
-        functions->error_print_msg(error);
-        functions->error_free(error);
-        free(json);
+    cout << "A" << endl;
+    err = functions->workflow_disassemble(workflow, &disas);
+    cout << "B" << endl;
+    if (err != nullptr) {
+        functions->error_print_err(err);
+        functions->error_free(err);
+        functions->workflow_free(workflow);
         functions->compiler_free(compiler);
         functions_unload(functions);
         return 1;
@@ -78,7 +75,7 @@ int main(int argc, char* argv[]) {
 
     // Free everything up and we're done
     free(disas);
-    free(json);
+    functions->workflow_free(workflow);
     functions->compiler_free(compiler);
     functions_unload(functions);
 }
