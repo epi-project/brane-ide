@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 16:07:51
  * Last edited:
- *   10 Jul 2023, 09:56:42
+ *   12 Jul 2023, 14:29:20
  * Auto updated?
  *   Yes
  *
@@ -96,9 +96,7 @@ int main(int argc, char* argv[]) {
 
     // Print the disassembled version of the workflow
     char* disas;
-    cout << "A" << endl;
     err = functions->workflow_disassemble(workflow, &disas);
-    cout << "B" << endl;
     if (err != nullptr) {
         functions->error_print_err(err);
         functions->error_free(err);
@@ -116,6 +114,7 @@ int main(int argc, char* argv[]) {
     if (err != nullptr) {
         functions->error_print_err(err);
         functions->error_free(err);
+        free(disas);
         functions->workflow_free(workflow);
         functions->vm_free(vm);
         functions->compiler_free(compiler);
