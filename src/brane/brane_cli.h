@@ -4,7 +4,7 @@
  * Created:
  *   14 Jun 2023, 11:49:07
  * Last edited:
- *   10 Jul 2023, 09:54:08
+ *   19 Jul 2023, 09:21:36
  * Auto updated?
  *   Yes
  *
@@ -23,8 +23,8 @@
 /***** MACROS *****/
 /* Defines a shortcut for loading a symbol from a handle with `dlsym()`. */
 #define LOAD_SYMBOL(TARGET, PROTOTYPE) \
-    (functions->TARGET) = (PROTOTYPE) dlsym(functions->handle, (#TARGET)); \
-    if ((functions->TARGET) == NULL) { fprintf(stderr, "Failed to load symbol '%s': %s\n", (#TARGET), dlerror()); return NULL; }
+    (state->TARGET) = (PROTOTYPE) dlsym(state->handle, (#TARGET)); \
+    if ((state->TARGET) == NULL) { fprintf(stderr, "Failed to load symbol '%s': %s\n", (#TARGET), dlerror()); return NULL; }
 
 
 
@@ -346,12 +346,28 @@ struct _functions {
      */
     void (*fvalue_free)(FullValue* fvalue);
 
+    /* Checks if this [`FullValue`] needs processing.
+     * 
+     * For now, this only occurs when it is a [`FullValue::Data`] (download it) or [`FullValue::IntermediateResult`] (throw a warning).
+     * 
+     * # Arguments
+     * - `fvalue`: The [`FullValue`] to analyse.
+     * 
+     * # Returns
+     * True if `vm_process()` should be called on this value or false otherwise.
+     * 
+     * # Panics
+     * This function can panic if `fvalue` pointed to [`NULL`].
+     */
+    bool (*fvalue_needs_processing)(FullValue* fvalue);
+
 
 
     /***** VIRTUAL MACHINE *****/
     /* Constructor for the VirtualMachine.
      * 
      * # Arguments
+     * - `api_endpoint`: The Brane API endpoint to connect to to download available registries and all that.
      * - `drv_endpoint`: The BRANE driver endpoint to connect to to execute stuff.
      * - `pindex`: The [`PackageIndex`] to resolve package references in the snippets with.
      * - `dindex`: The [`DataIndex`] to resolve dataset references in the snippets with.
@@ -361,9 +377,9 @@ struct _functions {
      * An [`Error`]-struct that contains the error occurred, or [`NULL`] otherwise.
      * 
      * # Panics
-     * This function can panic if the given `pindex` or `dindex` are NULL, or if the given `drv_endpoint` does not point to a valid UTF-8 string.
+     * This function can panic if the given `pindex` or `dindex` are NULL, or if the given `api_endpoint` or `drv_endpoint` do not point to a valid UTF-8 string.
      */
-    Error* (*vm_new)(const char* drv_endpoint, PackageIndex* pindex, DataIndex* dindex, VirtualMachine** vm);
+    Error* (*vm_new)(const char* api_endpoint, const char* drv_endpoint, PackageIndex* pindex, DataIndex* dindex, VirtualMachine** vm);
     /* Destructor for the VirtualMachine.
      * 
      * SAFETY: You _must_ call this destructor yourself whenever you are done with the struct to cleanup any code. _Don't_ use any C-library free!
@@ -387,6 +403,25 @@ struct _functions {
      * This function may panic if the input `vm` or `workflow` pointed to a NULL-pointer.
      */
     Error* (*vm_run)(VirtualMachine* vm, Workflow* workflow, FullValue** result);
+    /* Processes the result referred to by the [`FullValue`].
+     * 
+     * Processing currently consists of:
+     * - Downloading the dataset if it's a [`FullValue::Data`]
+     * - Throwing a warning if it's a [`FullValue::IntermediateResult`]
+     * - Doing nothing otherwise
+     * 
+     * # Arguments
+     * - `vm`: The [`VirtualMachine`] that we download with. This determines which backend to use.
+     * - `result`: The [`FullValue`] which we will attempt to download if needed.
+     * - `data_dir`: The directory to download the result to. This should be the generic data directory, as a new directory for this dataset will be created within.
+     * 
+     * # Returns
+     * An [`Error`]-struct that contains the error occurred, or [`NULL`] otherwise.
+     * 
+     * # Panics
+     * This function may panic if the input `vm` or `result` pointed to a NULL-pointer, or if `data_dir` did not point to a valid UTF-8 string.
+     */
+    Error* (*vm_process)(VirtualMachine* vm, FullValue* result, const char* data_dir);
 };
 typedef struct _functions Functions;
 
@@ -405,11 +440,11 @@ typedef struct _functions Functions;
  */
 Functions* functions_load(const char* path) {
     // Allocate the struct
-    Functions* functions = (Functions*) malloc(sizeof(Functions));
+    Functions* state = (Functions*) malloc(sizeof(Functions));
 
     // Attempt to load the dlopen handle
-    functions->handle = dlopen(path, RTLD_LAZY);
-    if (functions->handle == NULL) { fprintf(stderr, "Failed to load dynamic library '%s': %s\n", path, dlerror()); return NULL; }
+    state->handle = dlopen(path, RTLD_LAZY);
+    if (state->handle == NULL) { fprintf(stderr, "Failed to load dynamic library '%s': %s\n", path, dlerror()); return NULL; }
 
     // Load the error symbols
     LOAD_SYMBOL(error_free, void(*)(Error*));
@@ -439,23 +474,28 @@ Functions* functions_load(const char* path) {
     LOAD_SYMBOL(compiler_free, void (*)(Compiler*));
     LOAD_SYMBOL(compiler_compile, SourceError* (*)(Compiler*, const char*, const char*, Workflow**));
 
+    // Load the FullValue symbols
+    LOAD_SYMBOL(fvalue_free, void (*)(FullValue*));
+    LOAD_SYMBOL(fvalue_needs_processing, bool (*)(FullValue*));
+
     // Load the VM symbols
-    LOAD_SYMBOL(vm_new, Error* (*)(const char*, PackageIndex*, DataIndex*, VirtualMachine**));
+    LOAD_SYMBOL(vm_new, Error* (*)(const char*, const char*, PackageIndex*, DataIndex*, VirtualMachine**));
     LOAD_SYMBOL(vm_free, void (*)(VirtualMachine*));
     LOAD_SYMBOL(vm_run, Error* (*)(VirtualMachine*, Workflow*, FullValue**));
+    LOAD_SYMBOL(vm_process, Error* (*)(VirtualMachine*, FullValue*, const char*));
 
     // Done
-    return functions;
+    return state;
 }
 /* Destroys the [`Functions`]-struct, unloading all the symbols within.
  * 
  * # Arguments
- * - `functions`: The [`Functions`]-struct to free.
+ * - `state`: The [`Functions`]-struct to free.
  */
-void functions_unload(Functions* functions) {
+void functions_unload(Functions* state) {
     // Close the handle, then free
-    dlclose(functions->handle);
-    free(functions);
+    dlclose(state->handle);
+    free(state);
 }
 
 #endif

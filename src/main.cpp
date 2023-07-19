@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 16:07:51
  * Last edited:
- *   12 Jul 2023, 14:29:20
+ *   19 Jul 2023, 09:30:52
  * Auto updated?
  *   Yes
  *
@@ -23,13 +23,15 @@ using namespace std;
 /***** ENTRYPOINT *****/
 int main(int argc, char* argv[]) {
     // REad the input
-    if (argc < 4) { cerr << "Usage: " << argv[0] << " <LIBBRANE_TSK_SO_PATH> <BRANE_API_ADDRESS> <BRANE_DRV_ADDRESS>"; return 1; }
+    if (argc < 5) { cerr << "Usage: " << argv[0] << " <LIBBRANE_TSK_SO_PATH> <BRANE_API_ADDRESS> <BRANE_DRV_ADDRESS> <DATA_DIR>"; return 1; }
     const char* so_path     = argv[1];
     const char* api_address = argv[2];
     const char* drv_address = argv[3];
+    const char* data_dir    = argv[4];
 
     // Define a piece of BraneScript source code to test
-    const char* source = "println(\"Hello, world!\");";
+    // const char* source = "println(\"Hello, world!\");";
+    const char* source = "import data_init; on \"test\" { let res := zeroes(16, \"vector\"); return commit_result(\"test_result\", res); }";
     
     // Load the functions in the .so file
     Functions* functions = functions_load(so_path);
@@ -65,7 +67,7 @@ int main(int argc, char* argv[]) {
 
     // Create the virtual machine
     VirtualMachine* vm;
-    err = functions->vm_new(drv_address, pindex, dindex, &vm);
+    err = functions->vm_new(api_address, drv_address, pindex, dindex, &vm);
     if (err != nullptr) {
         functions->compiler_free(compiler);
         functions->dindex_free(dindex);
@@ -107,6 +109,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     cout << disas << endl;
+    free(disas);
 
     // Run the workflow on the VM
     FullValue* result;
@@ -114,7 +117,6 @@ int main(int argc, char* argv[]) {
     if (err != nullptr) {
         functions->error_print_err(err);
         functions->error_free(err);
-        free(disas);
         functions->workflow_free(workflow);
         functions->vm_free(vm);
         functions->compiler_free(compiler);
@@ -122,9 +124,25 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Process the result if necessary
+    if (functions->fvalue_needs_processing(result)) {
+        // Call the process function
+        err = functions->vm_process(vm, result, data_dir);
+        if (err != nullptr) {
+            functions->error_print_err(err);
+            functions->error_free(err);
+            functions->fvalue_free(result);
+            free(disas);
+            functions->workflow_free(workflow);
+            functions->vm_free(vm);
+            functions->compiler_free(compiler);
+            functions_unload(functions);
+            return 1;
+        }
+    }
+
     // Free everything up and we're done
     functions->fvalue_free(result);
-    free(disas);
     functions->workflow_free(workflow);
     functions->vm_free(vm);
     functions->compiler_free(compiler);
