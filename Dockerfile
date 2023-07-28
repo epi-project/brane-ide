@@ -61,3 +61,6 @@ RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
 ##### RUN IMAGE #####
 # Start afresh and minimally
 FROM jupyter/minimal-notebook:lab-3.0.14
+
+# Copy-in the brane compiler code
+COPY /tmp/libbrane_cli.so /libbrane_cli.so

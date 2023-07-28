@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 17:39:03
  * Last edited:
- *   26 Jul 2023, 13:20:15
+ *   28 Jul 2023, 14:33:48
  * Auto updated?
  *   Yes
  *
@@ -17,6 +17,7 @@
 #include <string>
 #include <unordered_map>
 #include <iostream>
+#include <xeus/xhelper.hpp>
 
 #include "brane/brane_cli.h"
 #include "custom_interpreter.hpp"
@@ -81,7 +82,7 @@ public:
 
         // Load the data index for this sesh
         DataIndex* dindex = nullptr;
-        Error* err = brane_cli->dindex_new_remote(api_endpoint.c_str(), &dindex);
+        err = brane_cli->dindex_new_remote(api_endpoint.c_str(), &dindex);
         if (err == nullptr) {
             brane_cli->error_print_err(err);
             brane_cli->error_free(err);
@@ -238,20 +239,24 @@ nl::json custom_interpreter::execute_request_impl(int execution_counter, const s
     cout << "Handling execute request " << execution_counter << endl;
 
     // Fetch the Rust code.
+    /* TODO */
+
+    // Just return some random stuff for now
+    return xeus::create_error_reply("Hello_There", "123", {});
 }
 
 nl::json custom_interpreter::complete_request_impl(const std::string& code, int cursor_pos) {
-    
+    return xeus::create_complete_reply({}, 0, 0);
 }
 
 nl::json custom_interpreter::inspect_request_impl(const std::string& code, int cursor_pos, int detail_level) {
-    
+    return xeus::create_inspect_reply();
 }
 
 nl::json custom_interpreter::is_complete_request_impl(const std::string& code) {
-    
+    return xeus::create_is_complete_reply();
 }
 
 nl::json custom_interpreter::kernel_info_request_impl() {
-    
+    return xeus::create_info_reply("", "bscript", brane_cli->version(), "BraneScript", "2.0.0", "application/brane-script", ".bs");
 }
