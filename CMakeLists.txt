@@ -4,7 +4,7 @@
 # Created:
 #   13 Jun 2023, 16:02:33
 # Last edited:
-#   13 Jun 2023, 16:06:06
+#   01 Aug 2023, 17:01:26
 # Auto updated?
 #   Yes
 #
@@ -33,7 +33,7 @@ configure_file (
 )
 
 # Set some Xeus dependencies stuff
-option(XEUS_STATIC_DEPENDENCIES "link statically with xeus dependencies" OFF)
+option(XEUS_STATIC_DEPENDENCIES "link statically with xeus dependencies" ON)
 if (XEUS_STATIC_DEPENDENCIES)
     set(xeus-zmq_target "xeus-zmq-static")
 else ()

@@ -3,7 +3,7 @@ version: '3.5'
 services:
   brane-ide:
     container_name: brane-ide
-    image: brane-ide
+    image: brane-ide-server
     ports:
     - "127.0.0.1:8888:8888"
     restart: always
@@ -13,6 +13,7 @@ services:
     environment:
       DEBUG: "${DEBUG}"
       JUPYTER_ENABLE_LAB: "yes"
+      BRANE_API_URL: "${BRANE_API_URL}"
       BRANE_DRV_URL: "${BRANE_DRV_URL}"
 
 networks:

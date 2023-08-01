@@ -40,6 +40,18 @@ RUN mkdir -p /source/build
 # Pickup where we leftoff
 FROM dev AS build
 
+# Add extra dependencies, if any
+RUN apt-get update && apt-get install -y \
+    uuid-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Compile the Xeus library manually
+RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
+ && git clone https://github.com/jupyter-xeus/xeus /xeus && cd /xeus \
+ && mkdir -p ./build && cd ./build \
+ && cmake -D CMAKE_BUILD_TYPE=Release .. \
+ && make
+
 # Now copy the source
 RUN mkdir -p /source/build
 COPY ./src /source/src
@@ -52,7 +64,7 @@ RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
  && cmake -D CMAKE_INSTALL_PREFIX=$CONDA_PREFIX ../ \
  && cmake build . \
  && make \
- && make install
+ && mv $(readlink -f libxeus.so) libxeus.so.export
 
 
 
@@ -60,7 +72,52 @@ RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
 
 ##### RUN IMAGE #####
 # Start afresh and minimally
-FROM jupyter/minimal-notebook:lab-3.0.14
+FROM jupyter/minimal-notebook:lab-4.0.3 AS run
+
+# Set the startup user & path
+USER root
+WORKDIR /
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    openssl \
+    libzmq5 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Prepare the home folder
+RUN rmdir "$HOME/work" \
+ && mkdir -p "${HOME}/data" \
+ && chown jovyan:users "${HOME}/data" \
+ && chmod 744 "${HOME}/data" \
+ && mkdir -p "${HOME}/notebooks" \
+ && chown jovyan:users "${HOME}/notebooks" \
+ && chmod 744 "${HOME}/notebooks"
+
+# Write an entrypoint script to mount the DFS and add the anaconda bin to PATH
+RUN printf '%s\n' "#!/usr/bin/env bash" >> /entrypoint.sh \
+ && printf '%s\n' "cd \"${HOME}\"" >> /entrypoint.sh \
+ && printf '%s\n' "su jovyan<<'EOF'" >> /entrypoint.sh \
+ && printf '%s\n' "export PATH=\"/opt/conda/bin:\$PATH\"" >> /entrypoint.sh \
+ && printf '%s\n' "if [[ \"\$DEBUG\" -eq 1 ]]; then DEBUG_FLAG=' --debug'; else DEBUG_FLAG=''; fi" >> /entrypoint.sh \
+ && printf '%s\n' "tini -g -- start-notebook.sh\$DEBUG_FLAG" >> /entrypoint.sh \
+ && printf '%s\n' "EOF" >> /entrypoint.sh \
+ && chmod +x /entrypoint.sh
+
+# Install the libxeus from the build image
+COPY --from=build /xeus/build/libxeus.so.export /libxeus.so
+RUN echo "/libxeus.so" > /etc/ld.so.conf.d/libxeus.conf \
+ && ldconfig
+
+# Copy the kernel
+COPY --from=build /source/share/jupyter/kernels/bscript/kernel.json /opt/conda/share/jupyter/kernels/bscript/kernel.json
+COPY --from=build /source/share/jupyter/kernels/bscript/logo-32x32.png /opt/conda/share/jupyter/kernels/bscript/logo-32x32.png
+COPY --from=build /source/share/jupyter/kernels/bscript/logo-64x64.png /opt/conda/share/jupyter/kernels/bscript/logo-64x64.png
+COPY --from=build /source/build/bscript /opt/conda/bin/bscript
 
 # Copy-in the brane compiler code
-COPY /tmp/libbrane_cli.so /libbrane_cli.so
+COPY .tmp/libbrane_cli.so /libbrane_cli.so
+
+# Set the entrypoint and done
+WORKDIR /
+ENTRYPOINT [ "/entrypoint.sh" ]

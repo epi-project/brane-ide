@@ -259,7 +259,7 @@ yarn.lock
 
 
 # Ignore the notebooks dir
-notebooks/*
+notebooks
 
 # The container copy thing
 .tmp
