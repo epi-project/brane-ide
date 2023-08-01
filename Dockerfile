@@ -50,7 +50,8 @@ RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
  && git clone https://github.com/jupyter-xeus/xeus /xeus && cd /xeus \
  && mkdir -p ./build && cd ./build \
  && cmake -D CMAKE_BUILD_TYPE=Release .. \
- && make
+ && make \
+ && mv $(readlink -f libxeus.so) libxeus.so.export
 
 # Now copy the source
 RUN mkdir -p /source/build
@@ -63,8 +64,7 @@ WORKDIR /source/build
 RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
  && cmake -D CMAKE_INSTALL_PREFIX=$CONDA_PREFIX ../ \
  && cmake build . \
- && make \
- && mv $(readlink -f libxeus.so) libxeus.so.export
+ && make
 
 
 
