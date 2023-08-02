@@ -105,8 +105,8 @@ RUN printf '%s\n' "#!/usr/bin/env bash" >> /entrypoint.sh \
  && chmod +x /entrypoint.sh
 
 # Install the libxeus from the build image
-COPY --from=build /xeus/build/libxeus.so.export /libxeus.so
-RUN echo "/libxeus.so" > /etc/ld.so.conf.d/libxeus.conf \
+COPY --from=build /xeus/build/libxeus.so.export /libxeus.so.9
+RUN echo "/libxeus.so.9" > /etc/ld.so.conf.d/libxeus.conf \
  && ldconfig
 
 # Copy the kernel
@@ -117,6 +117,10 @@ COPY --from=build /source/build/bscript /opt/conda/bin/bscript
 
 # Copy-in the brane compiler code
 COPY .tmp/libbrane_cli.so /libbrane_cli.so
+
+# Set permissions
+RUN chown jovyan:users /opt/conda/bin/bscript \
+ && chmod +x /opt/conda/bin/bscript
 
 # Set the entrypoint and done
 WORKDIR /
