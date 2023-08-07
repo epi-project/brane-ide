@@ -45,14 +45,6 @@ RUN apt-get update && apt-get install -y \
     uuid-dev \
  && rm -rf /var/lib/apt/lists/*
 
-# Compile the Xeus library manually
-RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
- && git clone https://github.com/jupyter-xeus/xeus /xeus && cd /xeus \
- && mkdir -p ./build && cd ./build \
- && cmake -D CMAKE_BUILD_TYPE=Release .. \
- && make \
- && mv $(readlink -f libxeus.so) libxeus.so.export
-
 # Now copy the source
 RUN mkdir -p /source/build
 COPY ./src /source/src
@@ -82,8 +74,17 @@ WORKDIR /
 RUN apt-get update && apt-get install -y \
     curl \
     openssl \
-    libzmq5 \
  && rm -rf /var/lib/apt/lists/*
+
+# Install mamba
+ADD https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh /Mambaforge.sh
+RUN chmod +x /Mambaforge.sh \
+ && bash /Mambaforge.sh -b -p "${HOME}/conda" \
+ && ln -s "${HOME}/conda/etc/profile.d/conda.sh" "/etc/profile.d/conda.sh"
+
+# Install the Xeus dependencies
+RUN . "${HOME}/conda/etc/profile.d/conda.sh" \
+ && mamba install cppzmq xtl nlohmann_json xeus-zmq -c conda-forge
 
 # Prepare the home folder
 RUN rmdir "$HOME/work" \
@@ -104,11 +105,6 @@ RUN printf '%s\n' "#!/usr/bin/env bash" >> /entrypoint.sh \
  && printf '%s\n' "EOF" >> /entrypoint.sh \
  && chmod +x /entrypoint.sh
 
-# Install the libxeus from the build image
-COPY --from=build /xeus/build/libxeus.so.export /libxeus.so.9
-RUN echo "/libxeus.so.9" > /etc/ld.so.conf.d/libxeus.conf \
- && ldconfig
-
 # Copy the kernel
 COPY --from=build /source/share/jupyter/kernels/bscript/kernel.json /opt/conda/share/jupyter/kernels/bscript/kernel.json
 COPY --from=build /source/share/jupyter/kernels/bscript/logo-32x32.png /opt/conda/share/jupyter/kernels/bscript/logo-32x32.png
@@ -120,7 +116,7 @@ COPY .tmp/libbrane_cli.so /libbrane_cli.so
 
 # Set permissions
 RUN chown jovyan:users /opt/conda/bin/bscript \
- && chmod +x /opt/conda/bin/bscript
+ && chmod ugo+wrx /opt/conda/bin/bscript
 
 # Set the entrypoint and done
 WORKDIR /
