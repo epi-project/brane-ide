@@ -9,7 +9,7 @@ services:
     restart: always
     privileged: true
     volumes:
-    - "${BRANE_NOTEBOOK_DIR}:/home/jovyan/notebooks"
+    - "${BRANE_NOTEBOOK_DIR}:/home/brane/notebooks"
     environment:
       DEBUG: "${DEBUG}"
       JUPYTER_ENABLE_LAB: "yes"

@@ -5,7 +5,7 @@
 # Created:
 #   02 Aug 2023, 08:38:41
 # Last edited:
-#   07 Aug 2023, 16:03:57
+#   09 Aug 2023, 09:55:17
 # Auto updated?
 #   Yes
 #
@@ -717,9 +717,10 @@ class RunContainerTarget(Target):
     _args       : typing.List[str]
     _entrypoint : str
     _commands   : str
+    _volumes    : typing.List[typing.Tuple[str, str]]
 
 
-    def __init__(self, id: str, name: str, image: str, args: typing.List[str] = [], entrypoint: typing.Optional[str] = None, commands: typing.Optional[str] = None, deps: typing.List[str] = [], description: str = ""):
+    def __init__(self, id: str, name: str, image: str, args: typing.List[str] = [], entrypoint: typing.Optional[str] = None, commands: typing.Optional[str] = None, volumes: typing.List[typing.Tuple[str, str]] = [], deps: typing.List[str] = [], description: str = ""):
         """
             Constructor for the RunContainerTarget.
 
@@ -730,6 +731,7 @@ class RunContainerTarget(Target):
             - `image`: The name of the image to start.
             - `entrypoint`: If not None, overrides the ENTRYPOINT set in the image.
             - `commands`: If not None, overrides the image's CMD.
+            - `volumes`: Any volumes to attach. Given as tuple of (host, container) paths.
             - `deps`: A list of target identifier to mark as dependencies of this target.
             - `description`: Some human-readable description of what this target does.
 
@@ -746,6 +748,7 @@ class RunContainerTarget(Target):
         self._args       = args
         self._entrypoint = entrypoint
         self._commands   = commands
+        self._volumes    = volumes
 
     def build(self, _arch: Arch, _os: Os, dry_run: bool) -> bool:
         """
@@ -775,6 +778,8 @@ class RunContainerTarget(Target):
 
         # Construct the Docker arguments
         args = TARGET_ARGS["docker"] + [ "run", "-d", "--name", self._name ]
+        for host, cont in self._volumes:
+            args += [ "-v", f"{host}:{cont}" ]
         if self._entrypoint is not None:
             args += [ "--entrypoint", self._entrypoint ]
         if self._commands is not None:
@@ -1081,7 +1086,7 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
     ShellTarget("libbrane_cli", [ [ "mkdir", "-p", ".tmp" ], [ "cp", "-f", "$libbrane_cli", ".tmp/libbrane_cli.so" ] ], description="Copies the `libbrane_cli.so` shared library to a container-accessible location."),
 
     ### USER TARGETS ###
-    RunContainerTarget("start-dev", "brane-ide-dev", "brane-ide-dev", entrypoint="sleep", args=[ "infinity" ], deps=["dev-image"], description="Launches the development image for the Brane IDE project. You can connect in this with VS Code's Remote Development extension to access all dependencies."),
+    RunContainerTarget("start-dev", "brane-ide-dev", "brane-ide-dev", volumes=[(".", "/source")], entrypoint="sleep", args=[ "infinity" ], deps=["dev-image"], description="Launches the development image for the Brane IDE project. You can connect in this with VS Code's Remote Development extension to access all dependencies."),
     RmContainerTarget("stop-dev", "brane-ide-dev", force=True, description="Stops the development image for the Brane IDE project if it is running, and then removes it."),
 
     RunComposeTarget("start-ide-quiet", "./docker-compose.yml", namespace="brane-ide", deps=["run-image", "prepare-start-ide", "libbrane_cli"], description="Starts the runtime image for the Brane IDE project without querying the token."),
@@ -1241,7 +1246,7 @@ if __name__ == "__main__":
     parser.add_argument("-L", "--libbrane-path", default="./libbrane_cli.so", help="The path to the shared Brane CLI library.")
     parser.add_argument("-1", "--brane-api", default="http://localhost:50051", help="The address of the Brane API service to connect to.")
     parser.add_argument("-2", "--brane-drv", default="grpc://localhost:50053", help="The address of the Brane driver service to connect to.")
-    parser.add_argument("-3", "--brane-notebook-dir", default="./notenooks", help="The notebook directory to map in the IDE container.")
+    parser.add_argument("-3", "--brane-notebook-dir", default="./notebooks", help="The notebook directory to map in the IDE container.")
     parser.add_argument("-D", "--docker", default="docker", help="The `docker`-command to call for any Docker commands.")
     parser.add_argument("-C", "--docker-compose", default="docker compose", help="The `docker compose`-command to call for any Docker Compose commands.")
     parser.add_argument("-S", "--docker-socket", default=("npipe:////./pipe/docker_engine" if Os.default() == Os.windows() else "/var/run/docker.sock"), help="The location of the Docker socket to connect to.")

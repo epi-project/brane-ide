@@ -1,7 +1,7 @@
 {
     "display_name": "BraneScript",
     "argv": [
-        "@CMAKE_INSTALL_PREFIX@/@CMAKE_INSTALL_BINDIR@/@EXECUTABLE_NAME@",
+        "/usr/local/bin/bscript",
         "-f",
         "{connection_file}"
     ],
