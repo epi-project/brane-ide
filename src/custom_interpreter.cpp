@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 17:39:03
  * Last edited:
- *   28 Jul 2023, 14:33:48
+ *   09 Aug 2023, 13:43:31
  * Auto updated?
  *   Yes
  *
@@ -20,6 +20,7 @@
 #include <xeus/xhelper.hpp>
 
 #include "brane/brane_cli.h"
+#include "logging.hpp"
 #include "custom_interpreter.hpp"
 
 using namespace std;
@@ -198,14 +199,17 @@ unordered_map<string, Session*> sessions;
 /***** LIBRARY *****/
 void custom_interpreter::configure_impl() {
     // Let's only log for now
-    cout << "Initializing BraneScript kernel v" << KERNEL_VERSION << "..." << endl;
+    LOG_INFO("Initializing BraneScript kernel v" << KERNEL_VERSION << "...");
+
+    // Try to read the location of libbrane
+    const char* libbrane_path = std::getenv("LIBBRANE_PATH");
+    if (libbrane_path == NULL) { cerr << "Environment variable 'LIBBRANE_PATH' not specified" << endl; exit(EXIT_FAILURE); }
 
     // Load the dynamic functions
-    const char* libbrane = "/libbrane_tsk.so";
-    brane_cli = functions_load(libbrane);
+    brane_cli = functions_load(libbrane_path);
     if (brane_cli == NULL) {
         // We cannot continue!
-        cerr << "Failed to load '" << libbrane << "': " << dlerror() << endl;
+        cerr << "Failed to load '" << libbrane_path << "': " << dlerror() << endl;
         errored = true;
         return;
     }
@@ -214,13 +218,13 @@ void custom_interpreter::configure_impl() {
     sessions = unordered_map<string, Session*>();
 
     // Done
-    cout << "Initialization done." << endl;
+    LOG_DEBUG("Initialization done.");
 }
 
 void custom_interpreter::shutdown_request_impl() {
     // Only do stuff if not errorred
     if (errored) { return; }
-    cout << "Terminating BraneScript kernel v" << KERNEL_VERSION << "..." << endl;
+    LOG_INFO("Terminating BraneScript kernel...");
 
     // Clean the globals
     for (pair<string, Session*> p : sessions) {
@@ -230,13 +234,13 @@ void custom_interpreter::shutdown_request_impl() {
     functions_unload(brane_cli);
 
     // Done
-    cout << "Termination complete." << endl;
+    LOG_DEBUG("Termination complete.");
 }
 
 
 
 nl::json custom_interpreter::execute_request_impl(int execution_counter, const std::string& code, bool silent, bool store_history, nl::json user_expressions, bool allow_stdin) {
-    cout << "Handling execute request " << execution_counter << endl;
+    LOG_INFO("Handling execute request " << execution_counter);
 
     // Fetch the Rust code.
     /* TODO */
@@ -258,5 +262,6 @@ nl::json custom_interpreter::is_complete_request_impl(const std::string& code) {
 }
 
 nl::json custom_interpreter::kernel_info_request_impl() {
+    LOG_INFO("Handling kernel info request");
     return xeus::create_info_reply("", "bscript", brane_cli->version(), "BraneScript", "2.0.0", "application/brane-script", ".bs");
 }

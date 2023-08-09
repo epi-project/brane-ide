@@ -2,6 +2,8 @@
     "files.associations": {
         "*.cvc": "c",
         "iostream": "cpp",
-        "ostream": "cpp"
+        "ostream": "cpp",
+        "chrono": "cpp",
+        "iosfwd": "cpp"
     }
 }

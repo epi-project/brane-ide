@@ -107,6 +107,7 @@ USER root
 RUN printf '%s\n' "#!/usr/bin/env bash" >> /entrypoint.sh \
  && printf '%s\n' "su brane<<'EOF'" >> /entrypoint.sh \
  && printf '%s\n' "export PATH=\"/home/brane/.local/bin:$$PATH\"" >> /entrypoint.sh \
+ && printf '%s\n' "export LIBBRANE_PATH=\"/libbrane_cli.so\"" >> /entrypoint.sh \
  && printf '%s\n' "cd \"/home/brane/notebooks\"" >> /entrypoint.sh \
  && printf '%s\n' "if [[ \"\$DEBUG\" -eq 1 ]]; then DEBUG_FLAG=' --debug'; else DEBUG_FLAG=''; fi" >> /entrypoint.sh \
  && printf '%s\n' "jupyter-lab\$DEBUG_FLAG --ip 0.0.0.0 --no-browser" >> /entrypoint.sh \

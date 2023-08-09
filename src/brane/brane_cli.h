@@ -4,7 +4,7 @@
  * Created:
  *   14 Jun 2023, 11:49:07
  * Last edited:
- *   26 Jul 2023, 09:43:06
+ *   09 Aug 2023, 13:58:02
  * Auto updated?
  *   Yes
  *
@@ -447,8 +447,11 @@ Functions* functions_load(const char* path) {
     state->handle = dlopen(path, RTLD_LAZY);
     if (state->handle == NULL) { fprintf(stderr, "Failed to load dynamic library '%s': %s\n", path, dlerror()); return NULL; }
 
+    // Load the version symbol
+    LOAD_SYMBOL(version, const char* (*)());
+
     // Load the error symbols
-    LOAD_SYMBOL(error_free, void(*)(Error*));
+    LOAD_SYMBOL(error_free, void (*)(Error*));
     LOAD_SYMBOL(error_print_err, void (*)(Error*));
 
     // Load the source error symbols

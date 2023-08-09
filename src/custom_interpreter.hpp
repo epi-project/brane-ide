@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 16:09:11
  * Last edited:
- *   28 Jul 2023, 11:53:27
+ *   09 Aug 2023, 11:44:27
  * Auto updated?
  *   Yes
  *
@@ -14,8 +14,8 @@
  *   Based on: https://xeus.readthedocs.io/en/latest/kernel_implementation.html
 **/
 
-#ifndef CUSTOM_INTERPRETER_HPP
-#define CUSTOM_INTERPRETER_HPP
+#ifndef BSCRIPT_CUSTOM_INTERPRETER_HPP
+#define BSCRIPT_CUSTOM_INTERPRETER_HPP
 
 #include <xeus/xinterpreter.hpp>
 #include "nlohmann/json.hpp"

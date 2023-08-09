@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 16:07:51
  * Last edited:
- *   26 Jul 2023, 12:43:13
+ *   09 Aug 2023, 13:57:23
  * Auto updated?
  *   Yes
  *
@@ -35,6 +35,9 @@ int main(int argc, char* argv[]) {
     // Load the functions in the .so file
     Functions* functions = functions_load(so_path);
     if (functions == nullptr) { return 1; }
+
+    // Print summat
+    cout << "BraneScript compiler v" << (functions->version()) << endl;
 
     // Load the indices
     PackageIndex* pindex;
