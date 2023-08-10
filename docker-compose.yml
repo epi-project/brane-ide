@@ -10,11 +10,15 @@ services:
     privileged: true
     volumes:
     - "${BRANE_NOTEBOOK_DIR}:/home/brane/notebooks"
+    - "${BRANE_DATA_DIR}:/home/brane/data"
+    - "${BRANE_CERTS_DIR}:/home/brane/certs"
     environment:
       DEBUG: "${DEBUG}"
       JUPYTER_ENABLE_LAB: "yes"
-      BRANE_API_URL: "${BRANE_API_URL}"
-      BRANE_DRV_URL: "${BRANE_DRV_URL}"
+      BRANE_API_ADDR: "${BRANE_API_URL}"
+      BRANE_DRV_ADDR: "${BRANE_DRV_URL}"
+      BRANE_DATA_DIR: "/home/brane/data"
+      BRANE_CERTS_DIR: "/home/brane/certs"
 
 networks:
   default:

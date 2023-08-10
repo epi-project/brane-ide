@@ -5,7 +5,7 @@
 # Created:
 #   02 Aug 2023, 08:38:41
 # Last edited:
-#   09 Aug 2023, 09:55:17
+#   10 Aug 2023, 09:02:44
 # Auto updated?
 #   Yes
 #
@@ -16,6 +16,7 @@
 import abc
 import argparse
 import os
+import pathlib
 import platform
 import shlex
 import subprocess
@@ -26,7 +27,7 @@ from typing_extensions import Self
 
 ##### GLOBALS #####
 # Determines if `pdebug()` does anything
-DEBUG: bool = False
+DEBUG: bool = True
 
 # Determines any arguments relevant only for targets
 TARGET_ARGS: typing.Dict[str, typing.Optional[typing.Any]] = {
@@ -34,6 +35,8 @@ TARGET_ARGS: typing.Dict[str, typing.Optional[typing.Any]] = {
     "brane_api": None,
     "brane_drv": None,
     "brane_notebook_dir": None,
+    "brane_certs_dir": None,
+    "brane_data_dir": None,
     "docker": None,
     "docker_compose": None,
     "docker_socket": None,
@@ -99,6 +102,151 @@ def pdebug(message: str):
 
         # Prints the warning message with those colours
         print(f"{mid}[{end}{start}DEBUG{end}{mid}] {message}{end}", file=sys.stderr)
+
+def get_active_instance() -> typing.Optional[str]:
+    """
+        Returns the path to the active instance as indicated by Brane.
+
+        Note that this function tightly integrates with brane-cli to find the active instance.
+
+        Configuration directory location taken as brane_cli does, using https://docs.rs/dirs-2/latest/dirs_2/fn.config_dir.html.
+
+        # Returns
+        The path, or else `None` if we failed. The error is already printed as a warning, then.
+    """
+
+    # Expand the user path
+    home = pathlib.Path.home()
+    if Os.default() == Os.windows():
+        config = f"{home}\\Appdata\\Roaming"
+    elif Os.default() == Os.darwin():
+        config = f"{home}/Library/Preferences"
+    elif Os.default() == Os.linux():
+        config = f"{home}/.config"
+    brane = f"{config}/brane"
+
+    # Check if it exists
+    if not os.path.exists(brane):
+        # Return the local directory instead
+        pdebug(f"Brane configuration directory '{brane}' not found; assuming `brane` executable not used")
+        return None
+
+    # Attempt to find the active instance
+    active = f"{brane}/active_instance"
+    try:
+        with open(active, "r") as h:
+            active_instance = h.read()
+    except FileNotFoundError:
+        pwarn(f"Brane configuration directory exists, but no active instance found (run 'brane instance use ...' to make one active)")
+        pdebug(f"Brane configuration directory: '{brane}'")
+        pdebug(f"Expected location of active instance file: '{active}'")
+        return None
+    except IOError as e:
+        pwarn(f"Failed to read active instance file '{active}': {e}")
+        return None
+
+    # Attempt to find that instance
+    instances = f"{brane}/instances"
+    instance = f"{instances}/{active_instance}"
+    if not os.path.exists(instance):
+        pwarn(f"Instance '{active_instance}' is currently marked as active instance, but no such instance found")
+        return None
+
+    # Otherwise yay
+    return instance
+
+def get_default_api_addr() -> str:
+    """
+        Attempts to get the currently active instance's API endpoint.
+
+        If this fails, falls back to 'http://localhost:50051'.
+
+        # Returns
+        The path to the currently active certificate directory.
+    """
+
+    # Get the active instance's directory
+    instance = get_active_instance()
+    if instance is None:
+        pdebug("Falling back to 'http://localhost:50051'")
+        return "http://localhost:50051"
+
+    # Attempt to read the YAML file with the info
+    info = f"{instance}/info.yml"
+    try:
+        with open(info, "r") as h:
+            info = h.read()
+    except IOError as e:
+        pwarn(f"Failed to read instance info file '{info}': {e}")
+        pdebug("Falling back to 'http://localhost:50051'")
+        return "http://localhost:50051"
+
+    # Attempt to find the api address
+    for line in info.splitlines():
+        if len(line) >= 5 and line[:5] == "api: ":
+            # We found it, mark whatever follows
+            return line[5:]
+
+    # Otherwise, not found
+    pwarn(f"Instance info file '{info}' does not mention API address")
+    pdebug("Falling back to 'http://localhost:50051'")
+    return "http://localhost:50051"
+
+def get_default_drv_addr() -> str:
+    """
+        Attempts to get the currently active instance's driver endpoint.
+
+        If this fails, falls back to 'grpc://localhost:50053'.
+
+        # Returns
+        The path to the currently active certificate directory.
+    """
+
+    # Get the active instance's directory
+    instance = get_active_instance()
+    if instance is None:
+        pdebug("Falling back to 'http://localhost:50053'")
+        return "http://localhost:50053"
+
+    # Attempt to read the YAML file with the info
+    info = f"{instance}/info.yml"
+    try:
+        with open(info, "r") as h:
+            info = h.read()
+    except IOError as e:
+        pwarn(f"Failed to read instance info file '{info}': {e}")
+        pdebug("Falling back to 'http://localhost:50053'")
+        return "http://localhost:50053"
+
+    # Attempt to find the api address
+    for line in info.splitlines():
+        if len(line) >= 5 and line[:5] == "drv: ":
+            # We found it, mark whatever follows
+            return line[5:]
+
+    # Otherwise, not found
+    pwarn(f"Instance info file '{info}' does not mention driver address")
+    pdebug("Falling back to 'http://localhost:50053'")
+    return "http://localhost:50053"
+
+def get_default_certs_dir() -> str:
+    """
+        Attempts to get the currently active certificate directory.
+
+        If this fails, falls back to './certs'.
+
+        # Returns
+        The path to the currently active certificate directory.
+    """
+
+    # Get the active instance's directory
+    instance = get_active_instance()
+    if instance is None:
+        pdebug("Falling back to './certs'")
+        return "./certs"
+
+    # If we found it, mark its directory!
+    return f"{instance}/certs"
 
 
 
@@ -583,7 +731,7 @@ class ShellTarget(Target):
         # Launch processes for each of them
         for cmd in self._cmds:
             # Resolve any commands
-            cmd = [ (TARGET_ARGS[c[1:]] if len(c) > 0 and c[0] == "$" else c) for c in cmd ]
+            cmd = [ (TARGET_ARGS[c[1:]] if len(c) > 0 and c[0] == '$' else c) for c in cmd ]
 
             # Run it with the resolved arguments
             (code, _, _) = Process(cmd).execute(dry_run)
@@ -829,19 +977,19 @@ class RunComposeTarget(Target):
     """
 
     _file      : str
-    _env       : typing.Dict[str, str]
     _namespace : typing.Optional[str]
+    _env       : typing.Dict[str, str]
 
 
-    def __init__(self, id: str, file: str, env: typing.Dict[str, str] = dict(os.environ), namespace: typing.Optional[str] = None, deps: typing.List[str] = [], description: str = ""):
+    def __init__(self, id: str, file: str, namespace: typing.Optional[str] = None, env: typing.Dict[str, str] = dict(os.environ), deps: typing.List[str] = [], description: str = ""):
         """
             Constructor for the RunComposeTarget.
 
             # Arguments
             - `id`: The string identifier for this target.
             - `file`: The Docker Compose-file to run.
-            - `env`: Any additional environment variables to set for the run.
             - `namespace`: Any project/namespace to set for this run. Can be `None` to stick to compose's default.
+            - `env`: Any additional environment variables to set for the run.
             - `deps`: A list of target identifier to mark as dependencies of this target.
             - `description`: Some human-readable description of what this target does.
 
@@ -854,8 +1002,8 @@ class RunComposeTarget(Target):
 
         # Construct ourselves
         self._file      = file
-        self._env       = env
         self._namespace = namespace
+        self._env       = env
 
     def build(self, _arch: Arch, _os: Os, dry_run: bool) -> bool:
         """
@@ -876,16 +1024,15 @@ class RunComposeTarget(Target):
             args += [ "-p", self._namespace ]
         args += [ "-f", self._file, "up", "-d" ]
 
-        # Build the environment
-        env = dict(os.environ)
-        env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
-        env["DEBUG"] = "0"
-        env["BRANE_API_URL"] = TARGET_ARGS["brane_api"]
-        env["BRANE_DRV_URL"] = TARGET_ARGS["brane_drv"]
-        env["BRANE_NOTEBOOK_DIR"] = TARGET_ARGS["brane_notebook_dir"]
+        # Resolve the environment by adding DOCKER_SOCKET and by resolving TARGET_ARGS
+        for key in self._env:
+            val = self._env[key]
+            if len(val) >= 1 and val[0] == '$':
+                self._env[key] = TARGET_ARGS[val[1:]]
+        self._env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
 
         # Run the process
-        (code, _, _) = Process(args, env=env).execute(dry_run)
+        (code, _, _) = Process(args, env=self._env).execute(dry_run)
         if code != 0:
             raise RuntimeError(f"Failed to run command '{Process.shellify(args)}'")
 
@@ -999,9 +1146,10 @@ class RmComposeTarget(Target):
 
     _file      : str
     _namespace : str
+    _env       : str
 
 
-    def __init__(self, id: str, file: str, namespace: typing.Optional[str] = None, deps: typing.List[str] = [], description: str = ""):
+    def __init__(self, id: str, file: str, namespace: typing.Optional[str] = None, env: typing.Dict[str, str] = dict(os.environ), deps: typing.List[str] = [], description: str = ""):
         """
             Constructor for the RmComposeTarget.
 
@@ -1009,6 +1157,7 @@ class RmComposeTarget(Target):
             - `id`: The string identifier for this target.
             - `file`: The Docker Compose-file to run.
             - `namespace`: Any project/namespace to set for this run. Can be `None` to stick to compose's default.
+            - `env`: Any environment variables to set. This is mostly here to keep Docker Compose happy and populate proper envs in the file.
             - `deps`: A list of target identifier to mark as dependencies of this target.
             - `description`: Some human-readable description of what this target does.
 
@@ -1022,6 +1171,7 @@ class RmComposeTarget(Target):
         # Construct ourselves
         self._file      = file
         self._namespace = namespace
+        self._env       = env
 
     def build(self, _arch: Arch, _os: Os, dry_run: bool) -> bool:
         """
@@ -1042,16 +1192,15 @@ class RmComposeTarget(Target):
             args += [ "-p", self._namespace ]
         args += [ "-f", self._file, "down" ]
 
-        # Build the environment
-        env = dict(os.environ)
-        env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
-        env["DEBUG"] = "0"
-        env["BRANE_API_URL"] = TARGET_ARGS["brane_api"]
-        env["BRANE_DRV_URL"] = TARGET_ARGS["brane_drv"]
-        env["BRANE_NOTEBOOK_DIR"] = TARGET_ARGS["brane_notebook_dir"]
+        # Resolve the environment by adding DOCKER_SOCKET and by resolving TARGET_ARGS
+        for key in self._env:
+            val = self._env[key]
+            if len(val) >= 1 and val[0] == '$':
+                self._env[key] = TARGET_ARGS[val[1:]]
+        self._env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
 
         # Run it
-        (code, _, _) = Process(args, env=env).execute(dry_run)
+        (code, _, _) = Process(args, env=self._env).execute(dry_run)
         if code != 0: raise RuntimeError(f"Failed to run command '{Process.shellify(args)}'")
 
         # Alright done
@@ -1078,20 +1227,91 @@ class RmComposeTarget(Target):
 ##### TARGETS #####
 TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
     ### IMAGES ###
-    ImageTarget("dev-image", "brane-ide-dev", target="dev", description="Builds the development image for the Brane IDE project."),
-    ImageTarget("run-image", "brane-ide-server", target="run", description="Builds the runtime image for the Brane IDE project."),
+    ImageTarget("dev-image",
+        "brane-ide-dev",
+        target="dev",
+        description="Builds the development image for the Brane IDE project."
+    ),
+    ImageTarget("run-image",
+        "brane-ide-server",
+        target="run",
+        description="Builds the runtime image for the Brane IDE project."
+    ),
 
     ### SHELL TARGETS ###
-    ShellTarget("prepare-start-ide", [ [ "mkdir", "-p", "$brane_notebook_dir" ] ], description="Prepares starting the IDE by creating the notebook folder."),
-    ShellTarget("libbrane_cli", [ [ "mkdir", "-p", ".tmp" ], [ "cp", "-f", "$libbrane_cli", ".tmp/libbrane_cli.so" ] ], description="Copies the `libbrane_cli.so` shared library to a container-accessible location."),
+    ShellTarget("prepare-start-ide",
+        [
+            [ "mkdir", "-p", "$brane_notebook_dir" ],
+            [ "mkdir", "-p", "$brane_data_dir" ],
+            [ "mkdir", "-p", "$brane_certs_dir" ],
+        ],
+        description="Prepares starting the IDE by creating the attached folders."
+    ),
+    ShellTarget("libbrane_cli",
+        [
+            [ "mkdir", "-p", ".tmp" ],
+            [ "cp", "-f", "$libbrane_cli", ".tmp/libbrane_cli.so" ]
+        ],
+        description="Copies the `libbrane_cli.so` shared library to a container-accessible location."
+    ),
 
     ### USER TARGETS ###
-    RunContainerTarget("start-dev", "brane-ide-dev", "brane-ide-dev", volumes=[(".", "/source")], entrypoint="sleep", args=[ "infinity" ], deps=["dev-image"], description="Launches the development image for the Brane IDE project. You can connect in this with VS Code's Remote Development extension to access all dependencies."),
-    RmContainerTarget("stop-dev", "brane-ide-dev", force=True, description="Stops the development image for the Brane IDE project if it is running, and then removes it."),
+    RunContainerTarget("start-dev",
+        "brane-ide-dev",
+        "brane-ide-dev",
+        volumes=[(".", "/source")],
+        entrypoint="sleep",
+        args=[ "infinity" ],
+        deps=["dev-image"],
+        description="Launches the development image for the Brane IDE project. You can connect in this with VS Code's Remote Development extension to access all dependencies."
+    ),
+    RmContainerTarget("stop-dev",
+        "brane-ide-dev",
+        force=True,
+        description="Stops the development image for the Brane IDE project if it is running, and then removes it."
+    ),
 
-    RunComposeTarget("start-ide-quiet", "./docker-compose.yml", namespace="brane-ide", deps=["run-image", "prepare-start-ide", "libbrane_cli"], description="Starts the runtime image for the Brane IDE project without querying the token."),
-    ShellTarget("start-ide", [ [ "chmod", "+x", "./get_jupyterlab_token.sh" ], [ "bash", "-c", "echo \"JupyterLab launched at:\" && echo \"    $(./get_jupyterlab_token.sh)\" && echo \"\" && echo \"Enter this link in your browser to connect to the server.\"" ] ], deps=["start-ide-quiet"], description="Starts the runtime image for the Brane IDE project without querying the token."),
-    RmComposeTarget("stop-ide", "./docker-compose.yml", namespace="brane-ide", description="Stops the runtime image for the Brane IDE project if it is running, and then removes it."),
+    RunComposeTarget("start-ide-quiet",
+        "./docker-compose.yml",
+        namespace="brane-ide",
+        deps=["run-image", "prepare-start-ide", "libbrane_cli"],
+        env={
+            **dict(os.environ),
+            **{
+                "DEBUG": "0",
+                "BRANE_API_URL": "$brane_api",
+                "BRANE_DRV_URL": "$brane_drv",
+                "BRANE_DATA_DIR": "$brane_data_dir",
+                "BRANE_CERTS_DIR": "$brane_certs_dir",
+                "BRANE_NOTEBOOK_DIR": "$brane_notebook_dir",
+            }
+        },
+        description="Starts the runtime image for the Brane IDE project without querying the token."
+    ),
+    ShellTarget("start-ide",
+        [
+            [ "chmod", "+x", "./get_jupyterlab_token.sh" ],
+            [ "bash", "-c", "echo \"JupyterLab launched at:\" && echo \"    $(./get_jupyterlab_token.sh)\" && echo \"\" && echo \"Enter this link in your browser to connect to the server.\"" ],
+        ],
+        deps=["start-ide-quiet"],
+        description="Starts the runtime image for the Brane IDE project without querying the token."
+    ),
+    RmComposeTarget("stop-ide",
+        "./docker-compose.yml",
+        namespace="brane-ide",
+        env={
+            **dict(os.environ),
+            **{
+                "DEBUG": "0",
+                "BRANE_API_URL": "$brane_api",
+                "BRANE_DRV_URL": "$brane_drv",
+                "BRANE_DATA_DIR": "$brane_data_dir",
+                "BRANE_CERTS_DIR": "$brane_certs_dir",
+                "BRANE_NOTEBOOK_DIR": "$brane_notebook_dir",
+            }
+        },
+        description="Stops the runtime image for the Brane IDE project if it is running, and then removes it."
+    ),
 ] }
 
 
@@ -1222,7 +1442,8 @@ def list_targets() -> int:
 
     # Print everything
     print("Supported targets:")
-    for id in TARGETS:
+    sorted_keys = list(TARGETS); sorted_keys.sort()
+    for id in sorted_keys:
         print(f"{dim} - {end}{green}{id}{end}{dim}:{end} {TARGETS[id].desc}")
 
 
@@ -1232,7 +1453,7 @@ def list_targets() -> int:
 # Actual entrypoint
 if __name__ == "__main__":
     # Define the arguments
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("TARGETS", nargs='*', help="The target(s) to build. See '--targets' for how to obtain a list of valid targets.")
 
     parser.add_argument("-t", "--targets", action="store_true", help="If given, prints the list of supported targets and then quits.")
@@ -1244,9 +1465,11 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--os", choices=Os.allowed().keys(), default=Os.default()._os, help="Determines the operating system for which to download executables and such.")
 
     parser.add_argument("-L", "--libbrane-path", default="./libbrane_cli.so", help="The path to the shared Brane CLI library.")
-    parser.add_argument("-1", "--brane-api", default="http://localhost:50051", help="The address of the Brane API service to connect to.")
-    parser.add_argument("-2", "--brane-drv", default="grpc://localhost:50053", help="The address of the Brane driver service to connect to.")
-    parser.add_argument("-3", "--brane-notebook-dir", default="./notebooks", help="The notebook directory to map in the IDE container.")
+    parser.add_argument("-1", "--brane-api", default=get_default_api_addr(), help="The address of the Brane API service to connect to.")
+    parser.add_argument("-2", "--brane-drv", default=get_default_drv_addr(), help="The address of the Brane driver service to connect to.")
+    parser.add_argument("-3", "--brane-data-dir", default="./data", help="The notebook directory to map in the IDE container.")
+    parser.add_argument("-4", "--brane-certs-dir", default=get_default_certs_dir(), help="The notebook directory to map in the IDE container.")
+    parser.add_argument("-5", "--brane-notebook-dir", default="./notebooks", help="The notebook directory to map in the IDE container.")
     parser.add_argument("-D", "--docker", default="docker", help="The `docker`-command to call for any Docker commands.")
     parser.add_argument("-C", "--docker-compose", default="docker compose", help="The `docker compose`-command to call for any Docker Compose commands.")
     parser.add_argument("-S", "--docker-socket", default=("npipe:////./pipe/docker_engine" if Os.default() == Os.windows() else "/var/run/docker.sock"), help="The location of the Docker socket to connect to.")
@@ -1263,6 +1486,9 @@ if __name__ == "__main__":
     TARGET_ARGS["libbrane_cli"] = args.libbrane_path
     TARGET_ARGS["brane_api"] = args.brane_api
     TARGET_ARGS["brane_drv"] = args.brane_drv
+    TARGET_ARGS["brane_data_dir"] = args.brane_data_dir
+    TARGET_ARGS["brane_certs_dir"] = args.brane_certs_dir
+    TARGET_ARGS["brane_notebook_dir"] = args.brane_notebook_dir
     TARGET_ARGS["brane_notebook_dir"] = args.brane_notebook_dir
     TARGET_ARGS["docker"] = args.docker
     TARGET_ARGS["docker_compose"] = args.docker_compose

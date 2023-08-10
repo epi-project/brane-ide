@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 17:39:03
  * Last edited:
- *   09 Aug 2023, 13:43:31
+ *   10 Aug 2023, 08:48:49
  * Auto updated?
  *   Yes
  *
@@ -25,6 +25,16 @@
 
 using namespace std;
 using namespace bscript;
+
+
+/***** HELPER MACROS *****/
+/* Reads a particular environment variable, with error handling (throws runtime error). */
+#define READ_ENV(VAR_NAME, ENV_NAME) \
+    const char* (VAR_NAME) = std::getenv(#ENV_NAME); \
+    if ((VAR_NAME) == nullptr) { cerr << "Environment variable '" #ENV_NAME "' not specified" << endl; exit(EXIT_FAILURE); }
+
+
+
 
 
 /***** CONSTANTS *****/
@@ -75,7 +85,7 @@ public:
         // Load the package index for this sesh
         PackageIndex* pindex = nullptr;
         Error* err = brane_cli->pindex_new_remote(api_endpoint.c_str(), &pindex);
-        if (err == nullptr) {
+        if (err != nullptr) {
             brane_cli->error_print_err(err);
             brane_cli->error_free(err);
             throw string("Failed to get package index (see output above)");
@@ -84,7 +94,7 @@ public:
         // Load the data index for this sesh
         DataIndex* dindex = nullptr;
         err = brane_cli->dindex_new_remote(api_endpoint.c_str(), &dindex);
-        if (err == nullptr) {
+        if (err != nullptr) {
             brane_cli->error_print_err(err);
             brane_cli->error_free(err);
             brane_cli->pindex_free(pindex);
@@ -189,8 +199,8 @@ void swap(Session& s1, Session& s2) {
 
 
 /***** MORE GLOBALS *****/
-/* The global hashmap of sessions to running compilers. */
-unordered_map<string, Session*> sessions;
+/* The session that we connect with. */
+Session* session = nullptr;
 
 
 
@@ -201,9 +211,12 @@ void custom_interpreter::configure_impl() {
     // Let's only log for now
     LOG_INFO("Initializing BraneScript kernel v" << KERNEL_VERSION << "...");
 
-    // Try to read the location of libbrane
-    const char* libbrane_path = std::getenv("LIBBRANE_PATH");
-    if (libbrane_path == NULL) { cerr << "Environment variable 'LIBBRANE_PATH' not specified" << endl; exit(EXIT_FAILURE); }
+    // Read environment stuff
+    READ_ENV(libbrane_path, LIBBRANE_PATH);
+    READ_ENV(api_addr, BRANE_API_ADDR);
+    READ_ENV(drv_addr, BRANE_DRV_ADDR);
+    READ_ENV(certs_dir, BRANE_CERTS_DIR);
+    READ_ENV(data_dir, BRANE_DATA_DIR);
 
     // Load the dynamic functions
     brane_cli = functions_load(libbrane_path);
@@ -214,8 +227,8 @@ void custom_interpreter::configure_impl() {
         return;
     }
 
-    // Initialize the sessions map
-    sessions = unordered_map<string, Session*>();
+    // Initialize the session
+    session = new Session(api_addr, drv_addr, certs_dir, data_dir);
 
     // Done
     LOG_DEBUG("Initialization done.");
@@ -227,10 +240,7 @@ void custom_interpreter::shutdown_request_impl() {
     LOG_INFO("Terminating BraneScript kernel...");
 
     // Clean the globals
-    for (pair<string, Session*> p : sessions) {
-        delete p.second;
-    }
-    sessions.clear();
+    if (session != nullptr) { delete session; session = nullptr; }
     functions_unload(brane_cli);
 
     // Done
@@ -242,7 +252,8 @@ void custom_interpreter::shutdown_request_impl() {
 nl::json custom_interpreter::execute_request_impl(int execution_counter, const std::string& code, bool silent, bool store_history, nl::json user_expressions, bool allow_stdin) {
     LOG_INFO("Handling execute request " << execution_counter);
 
-    // Fetch the Rust code.
+    // Create a new session if it does not yet exist.
+    
     /* TODO */
 
     // Just return some random stuff for now

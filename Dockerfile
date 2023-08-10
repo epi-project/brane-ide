@@ -55,9 +55,9 @@ RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
 
 # Now copy the source
 RUN mkdir -p /source/build
-COPY ./src /source/src
-COPY ./share /source/share
 COPY ./CMakeLists.txt /source/CMakeLists.txt
+COPY ./share /source/share
+COPY ./src /source/src
 
 # Run the build
 WORKDIR /source/build

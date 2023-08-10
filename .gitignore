@@ -258,8 +258,9 @@ venv
 yarn.lock
 
 
-# Ignore the notebooks dir
+# Ignore the Brane dirs
 notebooks
+data
 
 # The container copy thing
 .tmp
