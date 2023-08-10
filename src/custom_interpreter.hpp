@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 16:09:11
  * Last edited:
- *   09 Aug 2023, 11:44:27
+ *   10 Aug 2023, 13:20:40
  * Auto updated?
  *   Yes
  *
@@ -32,7 +32,7 @@ namespace bscript {
         virtual ~custom_interpreter() = default;
 
 
-    private:
+    public:
         /* Essentially a "start" function that is executed after Kernel creation, and before any request is executed. */
         void configure_impl() override;
 

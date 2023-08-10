@@ -110,7 +110,7 @@ RUN printf '%s\n' "#!/usr/bin/env bash" >> /entrypoint.sh \
  && printf '%s\n' "export LIBBRANE_PATH=\"/libbrane_cli.so\"" >> /entrypoint.sh \
  && printf '%s\n' "cd \"/home/brane/notebooks\"" >> /entrypoint.sh \
  && printf '%s\n' "if [[ \"\$DEBUG\" -eq 1 ]]; then DEBUG_FLAG=' --debug'; else DEBUG_FLAG=''; fi" >> /entrypoint.sh \
- && printf '%s\n' "jupyter-lab\$DEBUG_FLAG --ip 0.0.0.0 --no-browser" >> /entrypoint.sh \
+ && printf '%s\n' "jupyter-lab\$DEBUG_FLAG --ip 0.0.0.0 --no-browser --KernelSpecManager.ensure_native_kernel=False" >> /entrypoint.sh \
  && printf '%s\n' "EOF" >> /entrypoint.sh \
  && chmod ugo+x /entrypoint.sh
 
@@ -127,9 +127,6 @@ RUN chmod ugo+x /usr/local/bin/bscript
 
 # Copy-in the brane compiler code
 COPY .tmp/libbrane_cli.so /libbrane_cli.so
-
-# Remove the python module
-RUN rm -rf /home/brane/.local/share/jupyter/kernels/python3
 
 # Set the entrypoint and done
 WORKDIR /

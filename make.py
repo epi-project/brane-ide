@@ -5,7 +5,7 @@
 # Created:
 #   02 Aug 2023, 08:38:41
 # Last edited:
-#   10 Aug 2023, 09:02:44
+#   10 Aug 2023, 13:47:26
 # Auto updated?
 #   Yes
 #
@@ -1274,7 +1274,7 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
     RunComposeTarget("start-ide-quiet",
         "./docker-compose.yml",
         namespace="brane-ide",
-        deps=["run-image", "prepare-start-ide", "libbrane_cli"],
+        deps=["libbrane_cli", "run-image", "prepare-start-ide"],
         env={
             **dict(os.environ),
             **{

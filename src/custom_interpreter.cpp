@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 17:39:03
  * Last edited:
- *   10 Aug 2023, 08:48:49
+ *   10 Aug 2023, 13:53:49
  * Auto updated?
  *   Yes
  *
@@ -17,6 +17,7 @@
 #include <string>
 #include <unordered_map>
 #include <iostream>
+#include <xeus/xinterpreter.hpp>
 #include <xeus/xhelper.hpp>
 
 #include "brane/brane_cli.h"
@@ -46,8 +47,6 @@ const static char* KERNEL_VERSION = "1.0.0";
 
 
 /***** GLOBALS *****/
-/* Whether we are in a usable state or not. */
-bool errored = false;
 /* The map of dynamically loaded compiler functions. */
 Functions* brane_cli;
 
@@ -123,6 +122,10 @@ public:
             brane_cli->pindex_free(pindex);
             throw string("Failed to create virtual machine (see output above)");
         }
+
+        // Discard the index handles since they are owned by VM & compiler now
+        brane_cli->dindex_free(dindex);
+        brane_cli->pindex_free(pindex);
     }
 
     /* Copy constructor for the Session, which is deleted. */
@@ -223,7 +226,6 @@ void custom_interpreter::configure_impl() {
     if (brane_cli == NULL) {
         // We cannot continue!
         cerr << "Failed to load '" << libbrane_path << "': " << dlerror() << endl;
-        errored = true;
         return;
     }
 
@@ -236,14 +238,15 @@ void custom_interpreter::configure_impl() {
 
 void custom_interpreter::shutdown_request_impl() {
     // Only do stuff if not errorred
-    if (errored) { return; }
+    if (session == nullptr) { return; }
     LOG_INFO("Terminating BraneScript kernel...");
 
     // Clean the globals
-    if (session != nullptr) { delete session; session = nullptr; }
+    delete session;
     functions_unload(brane_cli);
 
     // Done
+    session = nullptr;
     LOG_DEBUG("Termination complete.");
 }
 
@@ -252,12 +255,115 @@ void custom_interpreter::shutdown_request_impl() {
 nl::json custom_interpreter::execute_request_impl(int execution_counter, const std::string& code, bool silent, bool store_history, nl::json user_expressions, bool allow_stdin) {
     LOG_INFO("Handling execute request " << execution_counter);
 
-    // Create a new session if it does not yet exist.
-    
-    /* TODO */
+    // Quit if errored
+    if (session == nullptr) {
+        return xeus::create_error_reply("init_failure", "Failed to initialize kernel; check the log");
+    }
 
-    // Just return some random stuff for now
-    return xeus::create_error_reply("Hello_There", "123", {});
+    // Attempt to compile the input
+    Workflow* workflow = nullptr;
+    SourceError* serr = brane_cli->compiler_compile(session->compiler, "<cell>", code.c_str(), &workflow);
+    if (brane_cli->serror_has_err(serr)) {
+        // Get the error as a string
+        char* buffer = new char[8192];
+        strncpy(buffer, "An internal error occurred while compiling the snippet:\n\n", 57);
+        brane_cli->serror_serialize_err(serr, buffer + 57, 8192 - 57);
+        brane_cli->serror_free(serr);
+
+        // Publish it in an error reply
+        publish_execution_error("internal_compile_error", buffer, {});
+
+        // Done, cleanup
+        delete[] buffer;
+        return xeus::create_error_reply();
+    }
+    if (brane_cli->serror_has_serrs(serr)) {
+        // Get the errors as a string
+        char* buffer = new char[8192];
+        brane_cli->serror_serialize_serrs(serr, buffer, 8192);
+        brane_cli->serror_free(serr);
+
+        // Publish it in an error reply
+        publish_execution_error("compile_error", buffer, {});
+
+        // Done, cleanup
+        delete[] buffer;
+        return xeus::create_error_reply();
+    }
+    brane_cli->serror_free(serr);
+
+    // // Show the assembly as output for now
+    // char* disas = nullptr;
+    // Error* err = brane_cli->workflow_disassemble(workflow, &disas);
+    // if (err != nullptr) {
+    //     // Get the error as a string
+    //     char* buffer = new char[8192];
+    //     strncpy(buffer, "An internal error occurred while disassembling the compiled snippet:\n\n", 70);
+    //     brane_cli->serror_serialize_err(serr, buffer + 70, 8192 - 70);
+    //     brane_cli->serror_free(serr);
+    //     brane_cli->workflow_free(workflow);
+
+    //     // Publish it in an error reply
+    //     publish_execution_error("internal_disassemble_error", buffer, {});
+
+    //     // Done, cleanup
+    //     delete[] buffer;
+    //     return xeus::create_error_reply();
+    // }
+
+    // // OK otherwise show the disassembled stuff
+    // nl::json pub_data({ { "text/plain", disas } });
+    // publish_execution_result(execution_counter, pub_data, nl::json({}));
+
+    // Run the snippet in the VM
+    FullValue* result = nullptr;
+    Error* err = brane_cli->vm_run(session->vm, workflow, &result);
+    if (err != nullptr) {
+        // Get the error as a string
+        char* buffer = new char[8192];
+        strncpy(buffer, "An internal error occurred while executing the snippet:\n\n", 57);
+        brane_cli->error_serialize_err(err, buffer + 57, 8192 - 57);
+        brane_cli->error_free(err);
+        brane_cli->workflow_free(workflow);
+
+        // Publish it in an error reply
+        publish_execution_error("internal_execute_error", buffer, {});
+
+        // Done, cleanup
+        delete[] buffer;
+        return xeus::create_error_reply();
+    }
+
+    // Process the result
+    if (brane_cli->fvalue_needs_processing(result)) {
+        err = brane_cli->vm_process(session->vm, result, session->data_dir.c_str());
+        if (err != nullptr) {
+            // Get the error as a string
+            char* buffer = new char[8192];
+            strncpy(buffer, "An internal error occurred while processing the snippet:\n\n", 58);
+            brane_cli->error_serialize_err(err, buffer + 58, 8192 - 58);
+            brane_cli->error_free(err);
+            brane_cli->fvalue_free(result);
+            brane_cli->workflow_free(workflow);
+
+            // Publish it in an error reply
+            publish_execution_error("internal_process_error", buffer, {});
+
+            // Done, cleanup
+            delete[] buffer;
+            return xeus::create_error_reply();
+        }
+    }
+
+    // Now serialize the result
+    char* buffer = new char[8192];
+    brane_cli->fvalue_serialize(result, buffer, 8192);
+
+    // Done, cleanup and return OK
+    brane_cli->fvalue_free(result);
+    // free(disas);
+    brane_cli->workflow_free(workflow);
+    return xeus::create_successful_reply();
 }
 
 nl::json custom_interpreter::complete_request_impl(const std::string& code, int cursor_pos) {
