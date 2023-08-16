@@ -5,7 +5,7 @@
 # Created:
 #   02 Aug 2023, 08:38:41
 # Last edited:
-#   10 Aug 2023, 13:47:26
+#   16 Aug 2023, 09:32:59
 # Auto updated?
 #   Yes
 #
@@ -755,6 +755,110 @@ class ShellTarget(Target):
         pdebug(f"Marking target '{self.id}' as outdated because shell targets are always outdated")
         return True
 
+class CopyFileTarget(Target):
+    """
+        Copies a file from one location to another.
+    """
+
+    _source   : str
+    _target   : str
+    _fix_dirs : bool
+
+
+    def __init__(self, id: str, source: str, target: str, fix_dirs: bool = True, deps: typing.List[str] = [], description: str = ""):
+        """
+            Constructor for the CopyFileTarget.
+
+            # Arguments
+            - `id`: The string identifier for this target.
+            - `source`: The source location to copy _from_.
+            - `target`: The target location to copy _to_.
+            - `fix_dirs`: Determines if we need to generate missing directories before copying or not.
+            - `deps`: A list of target identifier to mark as dependencies of this target.
+            - `description`: Some human-readable description of what this target does.
+        """
+
+        # Construct the super
+        super().__init__(id, deps, description)
+
+        # Set the child fields
+        self._source = source
+        self._target = target
+        self._fix_dirs = fix_dirs
+
+    def build(self, _arch: Arch, _os: Os, dry_run: bool) -> bool:
+        """
+            Builds this target.
+
+            # Arguments
+            - `arch`: The `Arch` that describes the architecture to build for.
+            - `os`: The `Os` that describes the operating system to build for.
+            - `dry_run`: If True, does not run any commands but just says it would.
+
+            # Returns
+            Whether any changes to relevant output were triggered.
+        """
+
+        # Determine colours to use
+        bold = "\033[1m" if supports_color() else ""
+        end  = "\033[0m" if supports_color() else ""
+
+        # Resolve the source & targets
+        source = TARGET_ARGS[self._source[1:]] if len(self._source) > 0 and self._source[0] == '$' else self._source
+        target = TARGET_ARGS[self._target[1:]] if len(self._target) > 0 and self._target[0] == '$' else self._target
+
+        # Attempt to fix directories if missing
+        if self._fix_dirs:
+            parent = pathlib.Path(target).parent
+            if not os.path.exists(parent):
+                print(f"{bold} > Creating parent directory '{parent}'...{end}")
+                os.makedirs(parent)
+
+        # Open the file, write buffered
+        print(f"{bold} > Copying '{source}' to '{target}'...{end}")
+        with open(source, "rb") as s:
+            with open(target, "wb") as f:
+                while True:
+                    # Read from the source
+                    buffer = s.read(65535)
+                    if len(buffer) == 0: break
+
+                    # Write to the target
+                    f.write(buffer)
+
+    def is_outdated(self) -> bool:
+        """
+            Compute whether this target needs to be updated.
+
+            Note that dependencies marking themselves as outdated are already taken care of.
+
+            # Returns
+            True if it should be updated, False if it shouldn't.
+        """
+
+        # Resolve the source & targets
+        source = TARGET_ARGS[self._source[1:]] if len(self._source) > 0 and self._source[0] == '$' else self._source
+        target = TARGET_ARGS[self._target[1:]] if len(self._target) > 0 and self._target[0] == '$' else self._target
+
+        # First check if the target exists
+        if not os.path.exists(target):
+            pdebug(f"Marking target '{self.id}' as outdated because the copy target '{target}' does not exist")
+            return True
+
+        # Next, compute a quick hash of the source and target to see if we need to copy
+        with open(source, "rb") as s:
+            source_hash = hash(s.read())
+        with open(target, "rb") as t:
+            target_hash = hash(t.read())
+        if source_hash != target_hash:
+            pdebug(f"Marking target '{self.id}' as outdated because source hash '{hex(source_hash)}' does not match target hash '{hex(target_hash)}'")
+            return True
+
+        # Otherwise, nothing needs to happen
+        pdebug(f"Marking target '{self.id}' as up-to-date because the target '{target}' exists and its hash matches that of the source '{source}'")
+        return False
+        
+
 class ImageTarget(Target):
     """
         Builds a Docker image.
@@ -1247,11 +1351,9 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
         ],
         description="Prepares starting the IDE by creating the attached folders."
     ),
-    ShellTarget("libbrane_cli",
-        [
-            [ "mkdir", "-p", ".tmp" ],
-            [ "cp", "-f", "$libbrane_cli", ".tmp/libbrane_cli.so" ]
-        ],
+    CopyFileTarget("libbrane_cli",
+        "$libbrane_cli",
+        ".tmp/libbrane_cli.so",
         description="Copies the `libbrane_cli.so` shared library to a container-accessible location."
     ),
 
@@ -1350,12 +1452,13 @@ def build(target: Target, arch: Arch, os: Os, force: bool, dry_run: bool):
 
         # Build it recursively
         dep_changed = build(dep_target, arch, os, force, dry_run)
-        if dep_changed: pdebug(f"Marking target '{target.id}' as outdated because its dependency '{dep}' was outdated")
+        if not force and dep_changed: pdebug(f"Marking target '{target.id}' as outdated because its dependency '{dep}' was outdated")
 
         # Update the changed status
         changed = changed or dep_changed
 
     # Check if the target itself needs updating
+    if force: pdebug(f"Marking target '{target.id}' as outdated because '--force' is given")
     changed = changed or target.is_outdated()
 
     # Build the target itself if it wants to be built

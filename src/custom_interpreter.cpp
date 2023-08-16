@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 17:39:03
  * Last edited:
- *   10 Aug 2023, 13:53:49
+ *   16 Aug 2023, 09:59:45
  * Auto updated?
  *   Yes
  *
@@ -261,33 +261,40 @@ nl::json custom_interpreter::execute_request_impl(int execution_counter, const s
     }
 
     // Attempt to compile the input
+    LOG_DEBUG("Compiling input snippet...");
     Workflow* workflow = nullptr;
     SourceError* serr = brane_cli->compiler_compile(session->compiler, "<cell>", code.c_str(), &workflow);
     if (brane_cli->serror_has_err(serr)) {
         // Get the error as a string
-        char* buffer = new char[8192];
-        strncpy(buffer, "An internal error occurred while compiling the snippet:\n\n", 57);
-        brane_cli->serror_serialize_err(serr, buffer + 57, 8192 - 57);
+        char* buffer = nullptr;
+        brane_cli->serror_serialize_err(serr, &buffer);
         brane_cli->serror_free(serr);
 
+        // Put it a bit in a bigger buffer with text
+        size_t buffer_len = strlen(buffer);
+        char* message = new char[57 + buffer_len];
+        strncpy(message, "An internal error occurred while compiling the snippet:\n\n", 57);
+        strncpy(message, buffer, buffer_len);
+        free(buffer);
+
         // Publish it in an error reply
-        publish_execution_error("internal_compile_error", buffer, {});
+        publish_execution_error("internal_compile_error", message, {});
 
         // Done, cleanup
-        delete[] buffer;
+        delete[] message;
         return xeus::create_error_reply();
     }
     if (brane_cli->serror_has_serrs(serr)) {
         // Get the errors as a string
-        char* buffer = new char[8192];
-        brane_cli->serror_serialize_serrs(serr, buffer, 8192);
+        char* buffer = nullptr;
+        brane_cli->serror_serialize_serrs(serr, &buffer);
         brane_cli->serror_free(serr);
 
         // Publish it in an error reply
         publish_execution_error("compile_error", buffer, {});
 
         // Done, cleanup
-        delete[] buffer;
+        free(buffer);
         return xeus::create_error_reply();
     }
     brane_cli->serror_free(serr);
@@ -316,13 +323,14 @@ nl::json custom_interpreter::execute_request_impl(int execution_counter, const s
     // publish_execution_result(execution_counter, pub_data, nl::json({}));
 
     // Run the snippet in the VM
+    LOG_DEBUG("Executing compiled workflow...");
+    char* prints = nullptr;
     FullValue* result = nullptr;
-    Error* err = brane_cli->vm_run(session->vm, workflow, &result);
+    Error* err = brane_cli->vm_run(session->vm, workflow, &prints, &result);
     if (err != nullptr) {
         // Get the error as a string
-        char* buffer = new char[8192];
-        strncpy(buffer, "An internal error occurred while executing the snippet:\n\n", 57);
-        brane_cli->error_serialize_err(err, buffer + 57, 8192 - 57);
+        char* buffer = nullptr;
+        brane_cli->error_serialize_err(err, &buffer);
         brane_cli->error_free(err);
         brane_cli->workflow_free(workflow);
 
@@ -330,36 +338,59 @@ nl::json custom_interpreter::execute_request_impl(int execution_counter, const s
         publish_execution_error("internal_execute_error", buffer, {});
 
         // Done, cleanup
-        delete[] buffer;
+        free(buffer);
         return xeus::create_error_reply();
     }
 
+    // Publish any prints as intermediary results
+    size_t prints_len = strlen(prints);
+    if (prints_len > 0) {
+        LOG_DEBUG("Publishing prints of workflow (" << prints_len << " characters)...");
+        nl::json pub_data({ { "text/plain", prints } });
+        publish_execution_result(execution_counter, pub_data, {});
+    }
+    free(prints);
+
     // Process the result
     if (brane_cli->fvalue_needs_processing(result)) {
+        LOG_DEBUG("Processing returned result...");
         err = brane_cli->vm_process(session->vm, result, session->data_dir.c_str());
         if (err != nullptr) {
             // Get the error as a string
-            char* buffer = new char[8192];
-            strncpy(buffer, "An internal error occurred while processing the snippet:\n\n", 58);
-            brane_cli->error_serialize_err(err, buffer + 58, 8192 - 58);
+            char* buffer = nullptr;
+            brane_cli->error_serialize_err(err, &buffer);
             brane_cli->error_free(err);
             brane_cli->fvalue_free(result);
             brane_cli->workflow_free(workflow);
 
+            // Put it a bit in a bigger buffer with text
+            size_t buffer_len = strlen(buffer);
+            char* message = new char[58 + buffer_len];
+            strncpy(message, "An internal error occurred while processing the snippet:\n\n", 58);
+            strncpy(message, buffer, buffer_len);
+            free(buffer);
+
             // Publish it in an error reply
-            publish_execution_error("internal_process_error", buffer, {});
+            publish_execution_error("internal_process_error", message, {});
 
             // Done, cleanup
-            delete[] buffer;
+            delete[] message;
             return xeus::create_error_reply();
         }
     }
 
     // Now serialize the result
-    char* buffer = new char[8192];
-    brane_cli->fvalue_serialize(result, buffer, 8192);
+    LOG_DEBUG("Serializing returned result...");
+    char* buffer = nullptr;
+    brane_cli->fvalue_serialize(result, session->data_dir.c_str(), &buffer);
+
+    // Publish it!
+    LOG_DEBUG("Publishing result of workflow (" << strlen(buffer) << " characters)...");
+    nl::json pub_data({ { "text/plain", buffer } });
+    publish_execution_result(execution_counter, pub_data, {});
 
     // Done, cleanup and return OK
+    free(buffer);
     brane_cli->fvalue_free(result);
     // free(disas);
     brane_cli->workflow_free(workflow);

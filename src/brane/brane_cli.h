@@ -4,7 +4,7 @@
  * Created:
  *   14 Jun 2023, 11:49:07
  * Last edited:
- *   10 Aug 2023, 12:30:19
+ *   16 Aug 2023, 09:58:28
  * Auto updated?
  *   Yes
  *
@@ -118,16 +118,12 @@ struct _functions {
      * 
      * # Arguments
      * - `err`: the [`Error`] to serialize the error of.
-     * - `buffer`: The buffer to serialize to.
-     * - `max_len`: The length of the buffer. Will simply stop writing if this length is exceeded.
-     * 
-     * # Returns
-     * The number of _characters_ (not bytes, i.e., bytes - 1) written.
+     * - `buffer`: The buffer to serialize to. Will be freshly allocated using `malloc` for the correct size; can be freed using `free()`.
      * 
      * # Panics
      * This function can panic if the given `err` or `buffer` are NULL-pointers.
      */
-    size_t (*error_serialize_err)(Error* err, char* buffer, size_t max_len);
+    void (*error_serialize_err)(Error* err, char** buffer);
 
     /* Prints the error message in this error to stderr.
      * 
@@ -194,48 +190,36 @@ struct _functions {
      * 
      * # Arguments
      * - `serr`: the [`SourceError`] to serialize the source warnings of.
-     * - `buffer`: The buffer to serialize to.
-     * - `max_len`: The length of the buffer. Will simply stop writing if this length is exceeded.
-     * 
-     * # Returns
-     * The number of _characters_ (not bytes, i.e., bytes - 1) written.
+     * - `buffer`: The buffer to serialize to. Will be freshly allocated using `malloc` for the correct size; can be freed using `free()`.
      * 
      * # Panics
      * This function can panic if the given `serr` or `buffer` are NULL-pointers.
      */
-    size_t (*serror_serialize_swarns)(SourceError* serr, char* buffer, size_t max_len);
+    void (*serror_serialize_swarns)(SourceError* serr, char** buffer);
     /* Serializes the source errors in this error to the given buffer.
      * 
      * Note that there may be zero or more errors at once. To discover if there are any, check [`serror_has_serrs()`].
      * 
      * # Arguments
      * - `serr`: the [`SourceError`] to serialize the source errors of.
-     * - `buffer`: The buffer to serialize to.
-     * - `max_len`: The length of the buffer. Will simply stop writing if this length is exceeded.
-     * 
-     * # Returns
-     * The number of _characters_ (not bytes, i.e., bytes - 1) written.
+     * - `buffer`: The buffer to serialize to. Will be freshly allocated using `malloc` for the correct size; can be freed using `free()`.
      * 
      * # Panics
      * This function can panic if the given `serr` or `buffer` are NULL-pointers.
      */
-    size_t (*serror_serialize_serrs)(SourceError* serr, char* buffer, size_t max_len);
+    void (*serror_serialize_serrs)(SourceError* serr, char** buffer);
     /* Serializes the error message in this error to the given buffer.
      * 
      * Note that there may be no error, but only source warnings- or errors. To discover if there is any, check [`serror_has_err()`].
      * 
      * # Arguments
      * - `serr`: the [`SourceError`] to serialize the error of.
-     * - `buffer`: The buffer to serialize to.
-     * - `max_len`: The length of the buffer. Will simply stop writing if this length is exceeded.
-     * 
-     * # Returns
-     * The number of _characters_ (not bytes, i.e., bytes - 1) written.
+     * - `buffer`: The buffer to serialize to. Will be freshly allocated using `malloc` for the correct size; can be freed using `free()`.
      * 
      * # Panics
      * This function can panic if the given `serr` or `buffer` are NULL-pointers.
      */
-    size_t (*serror_serialize_err)(SourceError* serr, char* buffer, size_t max_len);
+    void (*serror_serialize_err)(SourceError* serr, char** buffer);
 
     /* Prints the source warnings in this error to stderr.
      * 
@@ -425,6 +409,18 @@ struct _functions {
      */
     bool (*fvalue_needs_processing)(FullValue* fvalue);
 
+    /* Serializes a FullValue to show as result of the workflow.
+     * 
+     * # Arguments
+     * - `fvalue`: the [`FullValue`] to serialize.
+     * - `data_dir`: The data directory to which we downloaded the `fvalue`, if we did so.
+     * - `result`: The buffer to serialize to. Will be freshly allocated using `malloc` for the correct size; can be freed using `free()`.
+     * 
+     * # Panics
+     * This function can panic if the given `fvalue` is a NULL-pointer or if `data_dir` did not point to a valid UTF-8 string.
+     */
+    void (*fvalue_serialize)(FullValue* fvalue, const char* data_dir, char** result);
+
 
 
     /***** VIRTUAL MACHINE *****/
@@ -459,6 +455,7 @@ struct _functions {
      * # Arguments
      * - `vm`: The [`VirtualMachine`] that we execute with. This determines which backend to use.
      * - `workflow`: The compiled workflow to execute.
+     * - `prints`: A newly allocated string which represents any stdout- or stderr prints done during workflow execution. Will be [`NULL`] if there is an error (see below).
      * - `result`: A [`FullValue`] which represents the return value of the workflow. Will be [`NULL`] if there is an error (see below).
      * 
      * # Returns
@@ -467,7 +464,7 @@ struct _functions {
      * # Panics
      * This function may panic if the input `vm` or `workflow` pointed to a NULL-pointer.
      */
-    Error* (*vm_run)(VirtualMachine* vm, Workflow* workflow, FullValue** result);
+    Error* (*vm_run)(VirtualMachine* vm, Workflow* workflow, char** prints, FullValue** result);
     /* Processes the result referred to by the [`FullValue`].
      * 
      * Processing currently consists of:
@@ -516,7 +513,7 @@ Functions* functions_load(const char* path) {
 
     // Load the error symbols
     LOAD_SYMBOL(error_free, void (*)(Error*));
-    LOAD_SYMBOL(error_serialize_err, size_t (*)(Error*, char*, size_t));
+    LOAD_SYMBOL(error_serialize_err, void (*)(Error*, char**));
     LOAD_SYMBOL(error_print_err, void (*)(Error*));
 
     // Load the source error symbols
@@ -524,9 +521,9 @@ Functions* functions_load(const char* path) {
     LOAD_SYMBOL(serror_has_swarns, bool (*)(SourceError*));
     LOAD_SYMBOL(serror_has_serrs, bool (*)(SourceError*));
     LOAD_SYMBOL(serror_has_err, bool (*)(SourceError*));
-    LOAD_SYMBOL(serror_serialize_swarns, size_t (*)(SourceError*, char*, size_t));
-    LOAD_SYMBOL(serror_serialize_serrs, size_t (*)(SourceError*, char*, size_t));
-    LOAD_SYMBOL(serror_serialize_err, size_t (*)(SourceError*, char*, size_t));
+    LOAD_SYMBOL(serror_serialize_swarns, void (*)(SourceError*, char**));
+    LOAD_SYMBOL(serror_serialize_serrs, void (*)(SourceError*, char**));
+    LOAD_SYMBOL(serror_serialize_err, void (*)(SourceError*, char**));
     LOAD_SYMBOL(serror_print_swarns, void (*)(SourceError*));
     LOAD_SYMBOL(serror_print_serrs, void (*)(SourceError*));
     LOAD_SYMBOL(serror_print_err, void (*)(SourceError*));
@@ -549,11 +546,12 @@ Functions* functions_load(const char* path) {
     // Load the FullValue symbols
     LOAD_SYMBOL(fvalue_free, void (*)(FullValue*));
     LOAD_SYMBOL(fvalue_needs_processing, bool (*)(FullValue*));
+    LOAD_SYMBOL(fvalue_serialize, void (*)(FullValue*, const char*, char**));
 
     // Load the VM symbols
     LOAD_SYMBOL(vm_new, Error* (*)(const char*, const char*, const char*, PackageIndex*, DataIndex*, VirtualMachine**));
     LOAD_SYMBOL(vm_free, void (*)(VirtualMachine*));
-    LOAD_SYMBOL(vm_run, Error* (*)(VirtualMachine*, Workflow*, FullValue**));
+    LOAD_SYMBOL(vm_run, Error* (*)(VirtualMachine*, Workflow*, char**, FullValue**));
     LOAD_SYMBOL(vm_process, Error* (*)(VirtualMachine*, FullValue*, const char*));
 
     // Done
