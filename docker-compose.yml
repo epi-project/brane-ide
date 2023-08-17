@@ -13,6 +13,7 @@ services:
     - "${BRANE_DATA_DIR}:/home/brane/data"
     - "${BRANE_CERTS_DIR}:/home/brane/certs"
     environment:
+      RUST_BACKTRACE: "${DEBUG}"
       DEBUG: "${DEBUG}"
       JUPYTER_ENABLE_LAB: "yes"
       BRANE_API_ADDR: "${BRANE_API_URL}"

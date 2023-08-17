@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 17:39:03
  * Last edited:
- *   16 Aug 2023, 09:59:45
+ *   17 Aug 2023, 11:59:21
  * Auto updated?
  *   Yes
  *
@@ -229,6 +229,9 @@ void custom_interpreter::configure_impl() {
         return;
     }
 
+    // Set the colour mode
+    brane_cli->set_force_colour(true);
+
     // Initialize the session
     session = new Session(api_addr, drv_addr, certs_dir, data_dir);
 
@@ -274,7 +277,7 @@ nl::json custom_interpreter::execute_request_impl(int execution_counter, const s
         size_t buffer_len = strlen(buffer);
         char* message = new char[57 + buffer_len];
         strncpy(message, "An internal error occurred while compiling the snippet:\n\n", 57);
-        strncpy(message, buffer, buffer_len);
+        strncpy(57 + message, buffer, buffer_len);
         free(buffer);
 
         // Publish it in an error reply
@@ -299,34 +302,38 @@ nl::json custom_interpreter::execute_request_impl(int execution_counter, const s
     }
     brane_cli->serror_free(serr);
 
-    // // Show the assembly as output for now
-    // char* disas = nullptr;
-    // Error* err = brane_cli->workflow_disassemble(workflow, &disas);
-    // if (err != nullptr) {
-    //     // Get the error as a string
-    //     char* buffer = new char[8192];
-    //     strncpy(buffer, "An internal error occurred while disassembling the compiled snippet:\n\n", 70);
-    //     brane_cli->serror_serialize_err(serr, buffer + 70, 8192 - 70);
-    //     brane_cli->serror_free(serr);
-    //     brane_cli->workflow_free(workflow);
+    // Show the assembly as output for now
+    char* disas = nullptr;
+    Error* err = brane_cli->workflow_disassemble(workflow, &disas);
+    if (err != nullptr) {
+        // Get the error as a string
+        char* buffer = nullptr;
+        brane_cli->error_serialize_err(err, &buffer);
+        brane_cli->error_free(err);
 
-    //     // Publish it in an error reply
-    //     publish_execution_error("internal_disassemble_error", buffer, {});
+        // Put it a bit in a bigger buffer with text
+        size_t buffer_len = strlen(buffer);
+        char* message = new char[58 + buffer_len];
+        strncpy(message, "An internal error occurred while disassembling the snippet:\n\n", 58);
+        strncpy(58 + message, buffer, buffer_len);
+        free(buffer);
 
-    //     // Done, cleanup
-    //     delete[] buffer;
-    //     return xeus::create_error_reply();
-    // }
+        // Publish it in an error reply
+        publish_execution_error("internal_disassemble_error", message, {});
 
-    // // OK otherwise show the disassembled stuff
-    // nl::json pub_data({ { "text/plain", disas } });
-    // publish_execution_result(execution_counter, pub_data, nl::json({}));
+        // Done, cleanup
+        delete[] message;
+        return xeus::create_error_reply();
+    }
+    cout << disas << endl;
+    free(disas);
 
     // Run the snippet in the VM
     LOG_DEBUG("Executing compiled workflow...");
     char* prints = nullptr;
     FullValue* result = nullptr;
-    Error* err = brane_cli->vm_run(session->vm, workflow, &prints, &result);
+    // Error* err = brane_cli->vm_run(session->vm, workflow, &prints, &result);
+    err = brane_cli->vm_run(session->vm, workflow, &prints, &result);
     if (err != nullptr) {
         // Get the error as a string
         char* buffer = nullptr;
@@ -367,7 +374,7 @@ nl::json custom_interpreter::execute_request_impl(int execution_counter, const s
             size_t buffer_len = strlen(buffer);
             char* message = new char[58 + buffer_len];
             strncpy(message, "An internal error occurred while processing the snippet:\n\n", 58);
-            strncpy(message, buffer, buffer_len);
+            strncpy(58 + message, buffer, buffer_len);
             free(buffer);
 
             // Publish it in an error reply
@@ -392,7 +399,6 @@ nl::json custom_interpreter::execute_request_impl(int execution_counter, const s
     // Done, cleanup and return OK
     free(buffer);
     brane_cli->fvalue_free(result);
-    // free(disas);
     brane_cli->workflow_free(workflow);
     return xeus::create_successful_reply();
 }

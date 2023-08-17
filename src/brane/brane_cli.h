@@ -4,7 +4,7 @@
  * Created:
  *   14 Jun 2023, 11:49:07
  * Last edited:
- *   16 Aug 2023, 09:58:28
+ *   17 Aug 2023, 10:00:10
  * Auto updated?
  *   Yes
  *
@@ -101,6 +101,15 @@ struct _functions {
      * String version that contains a major, minor and patch version separated by dots.
      */
     const char* (*version)();
+
+    /* Forces the serialization functions to either use colour or not.
+     * 
+     * If you don't call this function, then it depends on whether the backend [`console`] library thinks if the stdout/stderr support ANSI colours.
+     * 
+     * # Arguments
+     * - `force`: If true, then ANSI characters will be forced to be printed. Otherwise, if false, they will be forced to _not_ be printed.
+     */
+    void (*set_force_colour)(bool force);
 
 
 
@@ -508,8 +517,9 @@ Functions* functions_load(const char* path) {
     state->handle = dlopen(path, RTLD_LAZY);
     if (state->handle == NULL) { fprintf(stderr, "Failed to load dynamic library '%s': %s\n", path, dlerror()); return NULL; }
 
-    // Load the version symbol
+    // Load the separate-function symbols
     LOAD_SYMBOL(version, const char* (*)());
+    LOAD_SYMBOL(set_force_colour, void (*)(bool));
 
     // Load the error symbols
     LOAD_SYMBOL(error_free, void (*)(Error*));

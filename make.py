@@ -5,7 +5,7 @@
 # Created:
 #   02 Aug 2023, 08:38:41
 # Last edited:
-#   16 Aug 2023, 09:32:59
+#   17 Aug 2023, 15:51:18
 # Auto updated?
 #   Yes
 #
@@ -21,8 +21,8 @@ import platform
 import shlex
 import subprocess
 import sys
+import time
 import typing
-from typing_extensions import Self
 
 
 ##### GLOBALS #####
@@ -30,17 +30,7 @@ from typing_extensions import Self
 DEBUG: bool = True
 
 # Determines any arguments relevant only for targets
-TARGET_ARGS: typing.Dict[str, typing.Optional[typing.Any]] = {
-    "libbrane_cli": None,
-    "brane_api": None,
-    "brane_drv": None,
-    "brane_notebook_dir": None,
-    "brane_certs_dir": None,
-    "brane_data_dir": None,
-    "docker": None,
-    "docker_compose": None,
-    "docker_socket": None,
-}
+TARGET_ARGS: typing.Dict[str, typing.Any] = {}
 
 
 
@@ -123,6 +113,8 @@ def get_active_instance() -> typing.Optional[str]:
         config = f"{home}/Library/Preferences"
     elif Os.default() == Os.linux():
         config = f"{home}/.config"
+    else:
+        raise ValueError(f"Unknown OS default '{Os.default()}'")
     brane = f"{config}/brane"
 
     # Check if it exists
@@ -253,6 +245,43 @@ def get_default_certs_dir() -> str:
 
 
 ##### HELPER STRUCTS #####
+T = typing.TypeVar("T")
+
+class ResolveArgs(typing.Generic[T]):
+    """
+        "Generics function" that resolves a given string value in the `TARGET_ARGS` dictionary if it starts with a dollar sign (`$`).
+
+        # Arguments
+        - `key`: The key to resolve.
+
+        # Returns
+        Either the key if it did not start with a dollar sign, or else the resolved value casted to type `T`.
+    """
+
+    def __call__(self, key: str) -> typing.Union[str, T]:
+        """
+            "Generics function" that resolves a given string value in the `TARGET_ARGS` dictionary if it starts with a dollar sign (`$`).
+
+            # Arguments
+            - `key`: The key to resolve.
+
+            # Returns
+            Either the key if it did not start with a dollar sign, or else the resolved value casted to type `T`.
+        """
+
+        # See if it starts with the all-important dollar
+        if len(key) == 0 or key[0] != '$': return key
+        key = key[1:]
+
+        # Else, resolve to the value
+        if key not in TARGET_ARGS: raise KeyError(f"Unknown key '{key}' in TARGET_ARGS")
+        value = TARGET_ARGS[key]
+
+        # Return it as the target type
+        return value
+
+
+
 class Arch:
     """
         Defines a class for keeping track of the target architecture.
@@ -328,8 +357,11 @@ class Arch:
 
         return Arch(Arch.ARM64)
 
-    def __eq__(self, other: Self) -> bool:
-        return self._arch == other._arch
+    def __eq__(self, other: typing.Any) -> bool:
+        if type(self) == type(other):
+            return self._arch == other._arch
+        else:
+            return False
     def __str__(self) -> str:
         """
             Serializes the Arch for readability purposes.
@@ -474,8 +506,11 @@ class Os:
 
         return Os(Os.LINUX)
 
-    def __eq__(self, other: Self) -> bool:
-        return self._os == other._os
+    def __eq__(self, other: typing.Any) -> bool:
+        if type(self) == type(other):
+            return self._os == other._os
+        else:
+            return False
     def __str__(self) -> str:
         """
             Serializes the OS for readability purposes.
@@ -570,9 +605,11 @@ class Process:
         if type(exe) == str:
             self.exe  = exe
             self.args = list(args)
-        else:
+        elif type(exe) == list:
             self.exe  = exe[0]
             self.args = exe[1:]
+        else:
+            raise TypeError(f"Illegal type '{type(exe)}' for exe")
         self.env  = env
 
         self._stdout = capture_stdout
@@ -629,6 +666,168 @@ class Process:
 
 
 
+class ExtractMethod(abc.ABC):
+    """
+        Virtual class for all possible log extraction methods.
+    """
+
+    def __init__(self):
+        # Nothing to be done
+        pass
+
+    @abc.abstractmethod
+    def extract(self, haystack: str) -> typing.Optional[str]:
+        """
+            Extracts the interested area from the given text and returns it.
+
+            # Arguments
+            - `haystack`: The text to extract from.
+
+            # Returns
+            The extract part of the `haystack`.
+        """
+
+        pass
+
+class ConsecutiveExtract(ExtractMethod):
+    """
+        Applies multiple Extracts, each to the result of the previous.
+    """
+
+    _extracts : typing.List[ExtractMethod]
+
+
+    def __init__(self, extracts: typing.List[ExtractMethod]):
+        """
+            Constructor for the ConsecutiveExtract.
+
+            # Arguments
+            - `extracts`: The list of extracts to consecutively apply.
+
+            # Returns
+            A new instance of a ConsecutiveExtract.
+        """
+
+        # initialize super
+        super().__init__()
+
+        # Set the extracts
+        self._extracts = extracts
+
+    def extract(self, haystack: str) -> typing.Optional[str]:
+        """
+            Extracts the interested area from the given text and returns it.
+
+            # Arguments
+            - `haystack`: The text to extract from.
+
+            # Returns
+            The extract part of the `haystack`.
+        """
+
+        # Apply them as long as we can
+        for ext in self._extracts:
+            narrowed_haystack = ext.extract(haystack)
+            if narrowed_haystack is None: return None
+            haystack = narrowed_haystack
+        return haystack
+
+class MatchedLineExtract(ExtractMethod):
+    """
+        Matches the first line that contains the given substring.
+    """
+
+    _substr : str
+    _nth: int
+
+
+    def __init__(self, substring: str, nth: int = 0):
+        """
+            Constructor for the MatchedLineExtract.
+
+            # Arguments
+            - `substring`: The first line containing this as a substring is returned.
+            - `nth`: How manieth match to take. By default, means the first one. Can use -1 to mean the last, -2 to mean the second-to-last, etc.
+
+            # Returns
+            A new instance of a MatchedLineExtract.
+        """
+
+        # initialize super
+        super().__init__()
+
+        # Set out own parameters
+        self._substr = substring
+        self._nth = nth
+
+    def extract(self, haystack: str) -> typing.Optional[str]:
+        """
+            Extracts the interested area from the given text and returns it.
+
+            # Arguments
+            - `haystack`: The text to extract from.
+
+            # Returns
+            The extract part of the `haystack`.
+        """
+
+        # Return the line that has the substring
+        n_matches = 0
+        for line in haystack.splitlines():
+            if self._substr in line:
+                if n_matches == self._nth: return line
+                n_matches += 1
+
+        # Else, return None
+        return None
+
+class MatchNthWordExtract(ExtractMethod):
+    """
+        Matches only the nth word in the given input.
+    """
+
+    _n : int
+
+
+    def __init__(self, n: int):
+        """
+            Constructor for the MatchNthWordExtract.
+
+            # Arguments
+            - `n`: Gives the meaning to "n" in "The n'th word to match" (zero-indexed).
+
+            # Returns
+            A new instance of a MatchNthWordExtract.
+        """
+
+        # initialize super
+        super().__init__()
+
+        # Set out own parameters
+        self._n = n
+
+    def extract(self, haystack: str) -> typing.Optional[str]:
+        """
+            Extracts the interested area from the given text and returns it.
+
+            # Arguments
+            - `haystack`: The text to extract from.
+
+            # Returns
+            The extract part of the `haystack`.
+        """
+
+        # Return the nth word
+        for (i, word) in enumerate(haystack.split()):
+            if i == self._n: return word
+        # Else, return None
+        return None
+
+
+
+
+
+##### TARGET DEFINITIONS #####
 class Target(abc.ABC):
     """
         Defines the common ancestor for all targets in this make script.
@@ -684,36 +883,104 @@ class Target(abc.ABC):
 
 
 
-
-
-##### TARGET DEFINITIONS #####
-class ShellTarget(Target):
+class ArrayTarget(Target):
     """
-        Just runs a few commands.
+        Target that runs multiple various other targets in succession.
+
+        This can be modelled with dependencies too, but this target is here to reduce the target count.
     """
 
-    _cmds : typing.List[typing.List[str]]
+    _targets : typing.List[Target]
 
 
-    def __init__(self, id: str, commands: typing.List[typing.List[str]], deps: typing.List[str] = [], description: str = ""):
+    def __init__(self, id: str, targets: typing.List[Target], deps: typing.List[str] = [], description: str = ""):
         """
-            Constructor for the ShellTarget.
+            Constructor for the ArrayTarget.
 
             # Arguments
             - `id`: The string identifier for this target.
-            - `commands`: A list of commands (each of which is a list of arguments) to run.
+            - `targets`: A list of targets to run.
             - `deps`: A list of target identifier to mark as dependencies of this target.
             - `description`: Some human-readable description of what this target does.
 
             # Returns
-            A new ShellTarget instance.
+            A new ArrayTarget instance.
         """
 
         # Construct the super
         super().__init__(id, deps, description)
 
         # Set the commands
-        self._cmds = commands
+        self._targets = targets
+
+    def build(self, arch: Arch, os: Os, dry_run: bool) -> bool:
+        """
+            Builds this target.
+
+            # Arguments
+            - `arch`: The `Arch` that describes the architecture to build for.
+            - `os`: The `Os` that describes the operating system to build for.
+            - `dry_run`: If True, does not run any commands but just says it would.
+
+            # Returns
+            Whether any changes to relevant output were triggered.
+        """
+
+        # Simply build them all in-order
+        changed = False
+        for target in self._targets:
+            pdebug(f"Building child target '{target.id}' of target '{self.id}'")
+            changed = changed or target.build(arch, os, dry_run)
+        return changed
+
+    def is_outdated(self) -> bool:
+        """
+            Compute whether this target needs to be updated.
+
+            Note that dependencies marking themselves as outdated are already taken care of.
+
+            # Returns
+            True if it should be updated, False if it shouldn't.
+        """
+
+        # Simply check for outdatedness in-order
+        for target in self._targets:
+            if target.is_outdated():
+                pdebug(f"Marking target '{self.id}' as outdated because child target '{target.id}' is outdated")
+                return True
+        pdebug("Marking target '{}' as up-to-date because all child targets ({}) are up-to-date".format(self.id, ", ".join([ f"'{t.id}'" for t in self._targets ])))
+        return False
+
+class MakeDirTarget(Target):
+    """
+        Target that creates a directory using Python's API.
+    """
+
+    _path : str
+    _all  : bool
+
+
+    def __init__(self, id: str, path: str, make_all: bool = True, deps: typing.List[str] = [], description: str = ""):
+        """
+            Constructor for the MakeDirTarget.
+
+            # Arguments
+            - `id`: The string identifier for this target.
+            - `path`: The path of the directory to construct.
+            - `make_all`: If true, also creates missing parent directories.
+            - `deps`: A list of target identifier to mark as dependencies of this target.
+            - `description`: Some human-readable description of what this target does.
+
+            # Returns
+            A new MakeDirTarget instance.
+        """
+
+        # Construct the super
+        super().__init__(id, deps, description)
+
+        # Set the commands
+        self._path = path
+        self._all = make_all
 
     def build(self, _arch: Arch, _os: Os, dry_run: bool) -> bool:
         """
@@ -728,17 +995,20 @@ class ShellTarget(Target):
             Whether any changes to relevant output were triggered.
         """
 
-        # Launch processes for each of them
-        for cmd in self._cmds:
-            # Resolve any commands
-            cmd = [ (TARGET_ARGS[c[1:]] if len(c) > 0 and c[0] == '$' else c) for c in cmd ]
+        # Determine colours to use
+        bold = "\033[1m" if supports_color() else ""
+        end  = "\033[0m" if supports_color() else ""
 
-            # Run it with the resolved arguments
-            (code, _, _) = Process(cmd).execute(dry_run)
-            if code != 0:
-                raise RuntimeError(f"Failed to run command '{Process.shellify(cmd)}'")
+        # Resolve the path
+        path = ResolveArgs[str]()(self._path)
 
-        # Done
+        # Create the directory(s)
+        print(f"{bold} > Creating directory '{path}'...{end}")
+        if not dry_run:
+            if self._all:
+                os.makedirs(path, exist_ok=True)
+            else:
+                os.mkdir(path)
         return True
 
     def is_outdated(self) -> bool:
@@ -751,9 +1021,16 @@ class ShellTarget(Target):
             True if it should be updated, False if it shouldn't.
         """
 
-        # Shell targets are always outdated
-        pdebug(f"Marking target '{self.id}' as outdated because shell targets are always outdated")
-        return True
+        # Resolve the path
+        path = ResolveArgs[str]()(self._path)
+
+        # Check only if it exists
+        if not os.path.exists(path):
+            pdebug(f"Marking target '{self.id}' as outdated because to-be-created directory '{path}' does not exist")
+            return True
+        else:
+            pdebug(f"Marking target '{self.id}' as up-to-date because to-be-created directory '{path}' already exists")
+            return False
 
 class CopyFileTarget(Target):
     """
@@ -804,27 +1081,29 @@ class CopyFileTarget(Target):
         end  = "\033[0m" if supports_color() else ""
 
         # Resolve the source & targets
-        source = TARGET_ARGS[self._source[1:]] if len(self._source) > 0 and self._source[0] == '$' else self._source
-        target = TARGET_ARGS[self._target[1:]] if len(self._target) > 0 and self._target[0] == '$' else self._target
+        source = ResolveArgs[str]()(self._source)
+        target = ResolveArgs[str]()(self._target)
 
         # Attempt to fix directories if missing
         if self._fix_dirs:
             parent = pathlib.Path(target).parent
             if not os.path.exists(parent):
                 print(f"{bold} > Creating parent directory '{parent}'...{end}")
-                os.makedirs(parent)
+                if not dry_run: os.makedirs(parent)
 
         # Open the file, write buffered
         print(f"{bold} > Copying '{source}' to '{target}'...{end}")
-        with open(source, "rb") as s:
-            with open(target, "wb") as f:
-                while True:
-                    # Read from the source
-                    buffer = s.read(65535)
-                    if len(buffer) == 0: break
+        if not dry_run:
+            with open(source, "rb") as s:
+                with open(target, "wb") as f:
+                    while True:
+                        # Read from the source
+                        buffer = s.read(65535)
+                        if len(buffer) == 0: break
 
-                    # Write to the target
-                    f.write(buffer)
+                        # Write to the target
+                        f.write(buffer)
+        return True
 
     def is_outdated(self) -> bool:
         """
@@ -837,8 +1116,8 @@ class CopyFileTarget(Target):
         """
 
         # Resolve the source & targets
-        source = TARGET_ARGS[self._source[1:]] if len(self._source) > 0 and self._source[0] == '$' else self._source
-        target = TARGET_ARGS[self._target[1:]] if len(self._target) > 0 and self._target[0] == '$' else self._target
+        source = ResolveArgs[str]()(self._source)
+        target = ResolveArgs[str]()(self._target)
 
         # First check if the target exists
         if not os.path.exists(target):
@@ -857,7 +1136,6 @@ class CopyFileTarget(Target):
         # Otherwise, nothing needs to happen
         pdebug(f"Marking target '{self.id}' as up-to-date because the target '{target}' exists and its hash matches that of the source '{source}'")
         return False
-        
 
 class ImageTarget(Target):
     """
@@ -913,7 +1191,7 @@ class ImageTarget(Target):
         """
 
         # Construct the Docker arguments
-        args = TARGET_ARGS["docker"] + [ "build", "--load", "-t", self._image ]
+        args = typing.cast(typing.List[str], TARGET_ARGS["docker"]) + [ "build", "--load", "-t", self._image ]
         if self._target is not None:
             args += [ "--target", self._target ]
         for arg in self._args:
@@ -924,7 +1202,7 @@ class ImageTarget(Target):
 
         # Build the environment
         env = dict(os.environ)
-        env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
+        env["DOCKER_SOCKET"] = typing.cast(str, TARGET_ARGS["docker_socket"])
 
         # Run the process
         (code, _, _) = Process(args, env=env).execute(dry_run)
@@ -944,20 +1222,24 @@ class ImageTarget(Target):
             True if it should be updated, False if it shouldn't.
         """
 
-        # Collect the list of available images
-        pdebug(f"Checking if an image named '{self._image}' exists...")
-        env = dict(os.environ)
-        env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
-        (code, stdout, _) = Process(TARGET_ARGS['docker'] + [ "image", "list" ], env=env, capture_stdout=True).execute(False, show_cmd=False)
-        if code != 0: raise RuntimeError(f"Failed to run command to check if image '{self._image}' is running")
+        # # Collect the list of available images
+        # pdebug(f"Checking if an image named '{self._image}' exists...")
+        # env = dict(os.environ)
+        # env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
+        # (code, stdout, _) = Process(TARGET_ARGS['docker'] + [ "image", "list" ], env=env, capture_stdout=True).execute(False, show_cmd=False)
+        # if code != 0: raise RuntimeError(f"Failed to run command to check if image '{self._image}' is running")
 
-        # We are only outdated if it does not exist
-        if self._image in stdout:
-            pdebug(f"Marking target '{self.id}' as up-to-date because image '{self._image}' already exists")
-            return False
-        else:
-            pdebug(f"Marking target '{self.id}' as outdated because no image '{self._image}' is found")
-            return True
+        # # We are only outdated if it does not exist
+        # if self._image in stdout:
+        #     pdebug(f"Marking target '{self.id}' as up-to-date because image '{self._image}' already exists")
+        #     return False
+        # else:
+        #     pdebug(f"Marking target '{self.id}' as outdated because no image '{self._image}' is found")
+        #     return True
+
+        # Simply always build because we are not tracking files ourselves
+        pdebug(f"Marking target '{self.id}' as outdated because image targets are always built (to have docker deal with cache staleness)")
+        return True
 
 class RunContainerTarget(Target):
     """
@@ -967,8 +1249,8 @@ class RunContainerTarget(Target):
     _name       : str
     _image      : str
     _args       : typing.List[str]
-    _entrypoint : str
-    _commands   : str
+    _entrypoint : typing.Optional[str]
+    _commands   : typing.Optional[str]
     _volumes    : typing.List[typing.Tuple[str, str]]
 
 
@@ -1018,18 +1300,19 @@ class RunContainerTarget(Target):
         # Collect the list of available images
         pdebug(f"Checking if a container named '{self._name}' exists...")
         env = dict(os.environ)
-        env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
-        (code, stdout, _) = Process(TARGET_ARGS['docker'] + [ "ps", "-a" ], env=env, capture_stdout=True).execute(False, show_cmd=False)
+        env["DOCKER_SOCKET"] = typing.cast(str, TARGET_ARGS["docker_socket"])
+        (code, stdout, _) = Process(typing.cast(typing.List[str], TARGET_ARGS["docker"]) + [ "ps", "-a" ], env=env, capture_stdout=True).execute(False, show_cmd=False)
         if code != 0: raise RuntimeError(f"Failed to run command to check if container '{self._name}' is running")
+        if stdout is None: raise RuntimeError(f"Expected non-empty 'stdout', got empty 'stdout'")
 
         # Remove the container if it exists
         if self._name in stdout:
             pdebug(f"Removing existing container '{self._name}'...")
-            (code, _, _) = Process(TARGET_ARGS["docker"] + [ "rm", "-f", self._name ], capture_stdout=True).execute(dry_run)
+            (code, _, _) = Process(typing.cast(typing.List[str], TARGET_ARGS["docker"]) + [ "rm", "-f", self._name ], capture_stdout=True).execute(dry_run)
             if code != 0: raise RuntimeError(f"Failed to run command to remove container '{self._name}'")
 
         # Construct the Docker arguments
-        args = TARGET_ARGS["docker"] + [ "run", "-d", "--name", self._name ]
+        args = typing.cast(typing.List[str], TARGET_ARGS["docker"]) + [ "run", "-d", "--name", self._name ]
         for host, cont in self._volumes:
             args += [ "-v", f"{host}:{cont}" ]
         if self._entrypoint is not None:
@@ -1040,7 +1323,7 @@ class RunContainerTarget(Target):
 
         # Build the environment
         env = dict(os.environ)
-        env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
+        env["DOCKER_SOCKET"] = typing.cast(str, TARGET_ARGS["docker_socket"])
 
         # Run the process
         (code, _, _) = Process(args, env=env).execute(dry_run)
@@ -1063,9 +1346,10 @@ class RunContainerTarget(Target):
         # Collect the list of available images
         pdebug(f"Checking if a container named '{self._name}' is running...")
         env = dict(os.environ)
-        env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
-        (code, stdout, _) = Process(TARGET_ARGS['docker'] + [ "ps" ], env=env, capture_stdout=True).execute(False, show_cmd=False)
+        env["DOCKER_SOCKET"] = typing.cast(str, TARGET_ARGS["docker_socket"])
+        (code, stdout, _) = Process(typing.cast(typing.List[str], TARGET_ARGS["docker"]) + [ "ps" ], env=env, capture_stdout=True).execute(False, show_cmd=False)
         if code != 0: raise RuntimeError(f"Failed to run command to check if container '{self._name}' is running")
+        if stdout is None: raise RuntimeError(f"Expected non-empty 'stdout', got empty 'stdout'")
 
         # If it contains the target container we are happy
         if self._name in stdout:
@@ -1123,17 +1407,15 @@ class RunComposeTarget(Target):
         """
 
         # Create the arguments
-        args = TARGET_ARGS["docker_compose"]
+        args = typing.cast(typing.List[str], TARGET_ARGS["docker_compose"])
         if self._namespace is not None:
             args += [ "-p", self._namespace ]
         args += [ "-f", self._file, "up", "-d" ]
 
         # Resolve the environment by adding DOCKER_SOCKET and by resolving TARGET_ARGS
         for key in self._env:
-            val = self._env[key]
-            if len(val) >= 1 and val[0] == '$':
-                self._env[key] = TARGET_ARGS[val[1:]]
-        self._env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
+            self._env[key] = ResolveArgs[str]()(self._env[key])
+        self._env["DOCKER_SOCKET"] = typing.cast(str, TARGET_ARGS["docker_socket"])
 
         # Run the process
         (code, _, _) = Process(args, env=self._env).execute(dry_run)
@@ -1202,14 +1484,14 @@ class RmContainerTarget(Target):
         """
 
         # Build the command
-        args = TARGET_ARGS["docker"] + [ "rm" ]
+        args = typing.cast(typing.List[str], TARGET_ARGS["docker"]) + [ "rm" ]
         if self._force:
             args += [ "-f" ]
         args += [ self._name ]
 
         # Build the environment
         env = dict(os.environ)
-        env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
+        env["DOCKER_SOCKET"] = typing.cast(str, TARGET_ARGS["docker_socket"])
 
         # Run it
         (code, _, _) = Process(args, env=env).execute(dry_run)
@@ -1231,9 +1513,10 @@ class RmContainerTarget(Target):
         # Collect the list of available images
         pdebug(f"Checking if a container named '{self._name}' exists...")
         env = dict(os.environ)
-        env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
-        (code, stdout, _) = Process(TARGET_ARGS['docker'] + [ "ps", "-a" ], env=env, capture_stdout=True).execute(False, show_cmd=False)
+        env["DOCKER_SOCKET"] = typing.cast(str, TARGET_ARGS["docker_socket"])
+        (code, stdout, _) = Process(typing.cast(typing.List[str], TARGET_ARGS["docker"]) + [ "ps", "-a" ], env=env, capture_stdout=True).execute(False, show_cmd=False)
         if code != 0: raise RuntimeError(f"Failed to run command to check if container '{self._name}' exists")
+        if stdout is None: raise RuntimeError(f"Expected non-empty 'stdout', got empty 'stdout'")
 
         # If it contains the target container we are happy
         if self._name in stdout:
@@ -1249,8 +1532,8 @@ class RmComposeTarget(Target):
     """
 
     _file      : str
-    _namespace : str
-    _env       : str
+    _namespace : typing.Optional[str]
+    _env       : typing.Dict[str, str]
 
 
     def __init__(self, id: str, file: str, namespace: typing.Optional[str] = None, env: typing.Dict[str, str] = dict(os.environ), deps: typing.List[str] = [], description: str = ""):
@@ -1291,17 +1574,15 @@ class RmComposeTarget(Target):
         """
 
         # Build the command
-        args = TARGET_ARGS["docker_compose"]
+        args = typing.cast(typing.List[str], TARGET_ARGS["docker_compose"])
         if self._namespace is not None:
             args += [ "-p", self._namespace ]
         args += [ "-f", self._file, "down" ]
 
         # Resolve the environment by adding DOCKER_SOCKET and by resolving TARGET_ARGS
         for key in self._env:
-            val = self._env[key]
-            if len(val) >= 1 and val[0] == '$':
-                self._env[key] = TARGET_ARGS[val[1:]]
-        self._env["DOCKER_SOCKET"] = TARGET_ARGS["docker_socket"]
+            self._env[key] = ResolveArgs[str]()(self._env[key])
+        self._env["DOCKER_SOCKET"] = typing.cast(str, TARGET_ARGS["docker_socket"])
 
         # Run it
         (code, _, _) = Process(args, env=self._env).execute(dry_run)
@@ -1324,6 +1605,102 @@ class RmComposeTarget(Target):
         pdebug(f"Marking target '{self.id}' as outdated because compose targets are always outdated")
         return True
 
+class ExtractContainerLogsTarget(Target):
+    """
+        Target that extracts a specific part of the logs of a Docker container.
+    """
+
+    _cont    : str
+    _msg     : str
+    _extract : ExtractMethod
+    _strip   : bool
+    _timeout : float
+
+
+    def __init__(self, id: str, container: str, message: str, extract: ExtractMethod, strip: bool = False, timeout: float = 0, deps: typing.List[str] = [], description: str = ""):
+        """
+            Constructor for the ExtractContainerLogsTarget.
+
+            # Arguments
+            - `id`: The string identifier for this target.
+            - `container`: The container to extract the logs from.
+            - `message`: The message to show above the extracted log(s).
+            - `extract`: The extraction method to apply.
+            - `strip`: If True, strips the extracted text of whitelines at both ends before printing it.
+            - `timeout`: Any time to wait before extracting the information from the logs. The message _is_ already printed. Given as seconds.
+            - `deps`: A list of target identifier to mark as dependencies of this target.
+            - `description`: Some human-readable description of what this target does.
+
+            # Returns
+            A new ExtractContainerLogsTarget instance.
+        """
+
+        # Construct the super
+        super().__init__(id, deps, description)
+
+        # Set the extraction method and other properties
+        self._cont = container
+        self._msg = message
+        self._extract = extract
+        self._strip = strip
+        self._timeout = timeout
+
+    def build(self, _arch: Arch, _os: Os, dry_run: bool) -> bool:
+        """
+            Builds this target.
+
+            # Arguments
+            - `arch`: The `Arch` that describes the architecture to build for.
+            - `os`: The `Os` that describes the operating system to build for.
+            - `dry_run`: If True, does not run any commands but just says it would.
+
+            # Returns
+            Whether any changes to relevant output were triggered.
+        """
+
+        # Show the message
+        print(f"{self._msg}")
+
+        # Wait if a timeout is given
+        if self._timeout > 0:
+            time.sleep(self._timeout)
+
+        # Attempt to get the container's logs
+        args = typing.cast(typing.List[str], TARGET_ARGS["docker"]) + [ "logs", self._cont ]
+        (code, stdout, stderr) = Process(args, capture_stdout=True, capture_stderr=True).execute(dry_run, show_cmd=False)
+        if code != 0:
+            raise RuntimeError(f"Failed to run command '{Process.shellify(args)}'")
+        if stdout is None: raise RuntimeError(f"Expected non-empty 'stdout', got empty 'stdout'")
+        if stderr is None: raise RuntimeError(f"Expected non-empty 'stderr', got empty 'stderr'")
+
+        # Find the extracted part
+        extracted = self._extract.extract(stdout + "\n" + stderr)
+        if extracted is None:
+            raise RuntimeError(f"Cannot extract container '{self._cont}' logs")
+        if self._strip:
+            extracted = extracted.strip()
+
+        # Show it
+        print('\n'.join([ f"    {l}" for l in extracted.splitlines() ]))
+        print("")
+
+        # We say nothing happened because we didn't influence anything
+        return False
+
+    def is_outdated(self) -> bool:
+        """
+            Compute whether this target needs to be updated.
+
+            Note that dependencies marking themselves as outdated are already taken care of.
+
+            # Returns
+            True if it should be updated, False if it shouldn't.
+        """
+
+        # Extract targets are always outdated
+        pdebug(f"Marking target '{self.id}' as outdated because log extraction targets are always outdated")
+        return True
+
 
 
 
@@ -1343,11 +1720,11 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
     ),
 
     ### SHELL TARGETS ###
-    ShellTarget("prepare-start-ide",
+    ArrayTarget("prepare-start-ide",
         [
-            [ "mkdir", "-p", "$brane_notebook_dir" ],
-            [ "mkdir", "-p", "$brane_data_dir" ],
-            [ "mkdir", "-p", "$brane_certs_dir" ],
+            MakeDirTarget("mkdir-notebook", "$brane_notebook_dir"),
+            MakeDirTarget("mkdir-data", "$brane_data_dir"),
+            MakeDirTarget("mkdir-certs", "$brane_certs_dir"),
         ],
         description="Prepares starting the IDE by creating the attached folders."
     ),
@@ -1380,7 +1757,7 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
         env={
             **dict(os.environ),
             **{
-                "DEBUG": "0",
+                "DEBUG": "$debug",
                 "BRANE_API_URL": "$brane_api",
                 "BRANE_DRV_URL": "$brane_drv",
                 "BRANE_DATA_DIR": "$brane_data_dir",
@@ -1390,11 +1767,11 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
         },
         description="Starts the runtime image for the Brane IDE project without querying the token."
     ),
-    ShellTarget("start-ide",
-        [
-            [ "chmod", "+x", "./get_jupyterlab_token.sh" ],
-            [ "bash", "-c", "echo \"JupyterLab launched at:\" && echo \"    $(./get_jupyterlab_token.sh)\" && echo \"\" && echo \"Enter this link in your browser to connect to the server.\"" ],
-        ],
+    ExtractContainerLogsTarget("start-ide",
+        "brane-ide",
+        "JupyterLab launched at:",
+        ConsecutiveExtract([ MatchedLineExtract("lab?token=", nth=1), MatchNthWordExtract(4) ]),
+        strip = True,
         deps=["start-ide-quiet"],
         description="Starts the runtime image for the Brane IDE project without querying the token."
     ),
@@ -1404,7 +1781,7 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
         env={
             **dict(os.environ),
             **{
-                "DEBUG": "0",
+                "DEBUG": "$debug",
                 "BRANE_API_URL": "$brane_api",
                 "BRANE_DRV_URL": "$brane_drv",
                 "BRANE_DATA_DIR": "$brane_data_dir",
@@ -1549,6 +1926,9 @@ def list_targets() -> int:
     for id in sorted_keys:
         print(f"{dim} - {end}{green}{id}{end}{dim}:{end} {TARGETS[id].desc}")
 
+    # Sweet, done
+    return 0
+
 
 
 
@@ -1586,6 +1966,7 @@ if __name__ == "__main__":
 
     # Set the globals
     DEBUG = args.debug
+    TARGET_ARGS["debug"] = "1" if DEBUG else "0"
     TARGET_ARGS["libbrane_cli"] = args.libbrane_path
     TARGET_ARGS["brane_api"] = args.brane_api
     TARGET_ARGS["brane_drv"] = args.brane_drv
