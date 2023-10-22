@@ -3,17 +3,23 @@ version: '3.5'
 services:
   brane-ide:
     container_name: brane-ide
-    image: brane-ide
+    image: brane-ide-server
     ports:
     - "127.0.0.1:8888:8888"
     restart: always
     privileged: true
     volumes:
-    - "${BRANE_NOTEBOOK_DIR}:/home/jovyan/notebooks"
+    - "${BRANE_NOTEBOOK_DIR}:/home/brane/notebooks"
+    - "${BRANE_DATA_DIR}:/home/brane/data"
+    - "${BRANE_CERTS_DIR}:/home/brane/certs"
     environment:
+      RUST_BACKTRACE: "${DEBUG}"
       DEBUG: "${DEBUG}"
       JUPYTER_ENABLE_LAB: "yes"
-      BRANE_DRV_URL: "${BRANE_DRV_URL}"
+      BRANE_API_ADDR: "${BRANE_API_URL}"
+      BRANE_DRV_ADDR: "${BRANE_DRV_URL}"
+      BRANE_DATA_DIR: "/home/brane/data"
+      BRANE_CERTS_DIR: "/home/brane/certs"
 
 networks:
   default:

@@ -1,0 +1,9 @@
+{
+    "display_name": "BraneScript",
+    "argv": [
+        "/usr/local/bin/bscript",
+        "-f",
+        "{connection_file}"
+    ],
+    "language": "BraneScript"
+}

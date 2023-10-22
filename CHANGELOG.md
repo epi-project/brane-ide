@@ -3,14 +3,11 @@
 All notable changes to the JupyterLab IDE extension for the Brane framework will be documented in this file.
 
 
-## [1.0.0] - 2022-12-07
+## [1.0.0] - 2023-06-13
 **IMPORTANT NOTICE**: From now on, `brane-ide` will stick to [semantic versioning](https://semver.org). Any breaking change will be something that would break _notebooks_ run in the `brane-ide`.
 
 ### Changed
-- 
-- The `brane-ide` to work with [Brane version 1.0.0](TODO).
-  - This means it now makes use of `branec` to compile snippets before sending them to the remote instance.
-  - Also updated `driver.proto` to match the protocol used by `brane-drv`.
+- Everything, and we're now using the [`Xeus`](https://github.com/jupyter-xeus/xeus) backend for direct interfacing with our existing Rust codebase.
 
 ### Fixed
 - `Makefile` by removing obsolete and non-working targets.

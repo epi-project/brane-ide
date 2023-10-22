@@ -1,0 +1,15 @@
+{
+    "configurations": [
+        {
+            "name": "brane-ide-dev",
+            "includePath": [
+                "/root/conda/include",
+                "${default}"
+            ],
+            "intelliSenseMode": "linux-gcc-x64",
+            "cStandard": "c17",
+            "cppStandard": "c++14"
+        }
+    ],
+    "version": 4
+}

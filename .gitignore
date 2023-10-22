@@ -1,6 +1,7 @@
 ### Code ###
 .vscode/*
 !.vscode/settings.json
+!.vscode/c_cpp_properties.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
@@ -257,8 +258,9 @@ venv
 yarn.lock
 
 
-# Ignore the notebooks dir
-notebooks/*
+# Ignore the Brane dirs
+notebooks
+data
 
 # The container copy thing
 .tmp
