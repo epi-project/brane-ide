@@ -20,6 +20,7 @@ services:
       BRANE_DRV_ADDR: "${BRANE_DRV_URL}"
       BRANE_DATA_DIR: "/home/brane/data"
       BRANE_CERTS_DIR: "/home/brane/certs"
+      BRANE_RESULT_USER: "${BRANE_RESULT_USER:-amy}"
 
 networks:
   default:

@@ -4,7 +4,7 @@
  * Created:
  *   14 Jun 2023, 11:49:07
  * Last edited:
- *   17 Aug 2023, 10:00:10
+ *   04 Mar 2024, 13:48:40
  * Auto updated?
  *   Yes
  *
@@ -328,6 +328,17 @@ struct _functions {
      */
     void (*workflow_free)(Workflow* workflow);
 
+    /* Given a workflow, injects an end user into it.
+     *
+     * # Arguments
+     * - `workflow`: The [`Workflow`] to inject into.
+     * - `user`: The name of the user to inject.
+     *
+     * # Panics
+     * This function can panic if the given `workflow` is a NULL-pointer, or if the given `user` is not valid UTF-8/a NULL-pointer.
+     */
+    void (*workflow_set_user)(Workflow* workflow, const char* user);
+
     /* Serializes the workflow by essentially disassembling it.
      * 
      * # Arguments
@@ -546,6 +557,7 @@ Functions* functions_load(const char* path) {
 
     // Load the workflow symbols
     LOAD_SYMBOL(workflow_free, void (*)(Workflow*));
+    LOAD_SYMBOL(workflow_set_user, void (*)(Workflow*, const char*));
     LOAD_SYMBOL(workflow_disassemble, Error* (*)(Workflow*, char**));
 
     // Load the compiler symbols

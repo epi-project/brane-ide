@@ -4,7 +4,7 @@
  * Created:
  *   13 Jun 2023, 17:39:03
  * Last edited:
- *   17 Aug 2023, 11:59:21
+ *   04 Mar 2024, 15:44:01
  * Auto updated?
  *   Yes
  *
@@ -49,6 +49,8 @@ const static char* KERNEL_VERSION = "1.0.0";
 /***** GLOBALS *****/
 /* The map of dynamically loaded compiler functions. */
 Functions* brane_cli;
+/* The end result user, loaded at startup. */
+const char* workflow_result_user;
 
 
 
@@ -220,6 +222,8 @@ void custom_interpreter::configure_impl() {
     READ_ENV(drv_addr, BRANE_DRV_ADDR);
     READ_ENV(certs_dir, BRANE_CERTS_DIR);
     READ_ENV(data_dir, BRANE_DATA_DIR);
+    READ_ENV(result_user, BRANE_RESULT_USER);
+    workflow_result_user = result_user;
 
     // Load the dynamic functions
     brane_cli = functions_load(libbrane_path);
@@ -301,6 +305,9 @@ nl::json custom_interpreter::execute_request_impl(int execution_counter, const s
         return xeus::create_error_reply();
     }
     brane_cli->serror_free(serr);
+
+    // Inject the end user
+    brane_cli->workflow_set_user(workflow, workflow_result_user);
 
     // Show the assembly as output for now
     char* disas = nullptr;

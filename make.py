@@ -5,7 +5,7 @@
 # Created:
 #   02 Aug 2023, 08:38:41
 # Last edited:
-#   17 Aug 2023, 15:51:18
+#   04 Mar 2024, 16:11:07
 # Auto updated?
 #   Yes
 #
@@ -1313,6 +1313,7 @@ class RunContainerTarget(Target):
 
         # Construct the Docker arguments
         args = typing.cast(typing.List[str], TARGET_ARGS["docker"]) + [ "run", "-d", "--name", self._name ]
+        args += [ "-u", f"{os.getuid()}:{os.getgid()}" ]
         for host, cont in self._volumes:
             args += [ "-v", f"{host}:{cont}" ]
         if self._entrypoint is not None:
@@ -1711,11 +1712,13 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
     ImageTarget("dev-image",
         "brane-ide-dev",
         target="dev",
+        build_args={"UID": str(os.getuid()), "GID": str(os.getgid())},
         description="Builds the development image for the Brane IDE project."
     ),
     ImageTarget("run-image",
         "brane-ide-server",
         target="run",
+        build_args={"UID": str(os.getuid()), "GID": str(os.getgid())},
         description="Builds the runtime image for the Brane IDE project."
     ),
 
@@ -1953,6 +1956,7 @@ if __name__ == "__main__":
     parser.add_argument("-3", "--brane-data-dir", default="./data", help="The notebook directory to map in the IDE container.")
     parser.add_argument("-4", "--brane-certs-dir", default=get_default_certs_dir(), help="The notebook directory to map in the IDE container.")
     parser.add_argument("-5", "--brane-notebook-dir", default="./notebooks", help="The notebook directory to map in the IDE container.")
+    parser.add_argument("-6", "--brane-result-user", default="$INSTANCE", help="The user to claim that sees the final workflow result, if any. If omitted, will read from the instance info.")
     parser.add_argument("-D", "--docker", default="docker", help="The `docker`-command to call for any Docker commands.")
     parser.add_argument("-C", "--docker-compose", default="docker compose", help="The `docker compose`-command to call for any Docker Compose commands.")
     parser.add_argument("-S", "--docker-socket", default=("npipe:////./pipe/docker_engine" if Os.default() == Os.windows() else "/var/run/docker.sock"), help="The location of the Docker socket to connect to.")
@@ -1973,7 +1977,7 @@ if __name__ == "__main__":
     TARGET_ARGS["brane_data_dir"] = args.brane_data_dir
     TARGET_ARGS["brane_certs_dir"] = args.brane_certs_dir
     TARGET_ARGS["brane_notebook_dir"] = args.brane_notebook_dir
-    TARGET_ARGS["brane_notebook_dir"] = args.brane_notebook_dir
+    TARGET_ARGS["brane_result_user"] = args.brane_result_user
     TARGET_ARGS["docker"] = args.docker
     TARGET_ARGS["docker_compose"] = args.docker_compose
     TARGET_ARGS["docker_socket"] = args.docker_socket

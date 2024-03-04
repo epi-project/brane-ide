@@ -14,23 +14,33 @@
 # We build on C++
 FROM ubuntu:22.04 AS dev
 
+# Define the user build args
+ARG UID=1000
+ARG GID=1000
+
 # Install the dependencies we need
 RUN apt-get update && apt-get install -y \
     gcc g++ cmake git \
  && rm -rf /var/lib/apt/lists/*
 
+# Now setup a user to run as as VSCODE
+RUN groupadd -g $GID vscode \
+ && useradd -m -u $UID -g $GID vscode
+
 # Install mamba
-ADD https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh /Mambaforge.sh
-RUN chmod +x /Mambaforge.sh \
- && bash /Mambaforge.sh -b -p "${HOME}/conda" \
- && ln -s "${HOME}/conda/etc/profile.d/conda.sh" "/etc/profile.d/conda.sh"
+ADD https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh /home/vscode/Mambaforge.sh
+RUN chown vscode:vscode /home/vscode/Mambaforge.sh
+
+USER vscode
+RUN bash /home/vscode/Mambaforge.sh -b -p "${HOME}/conda"
+#  && ln -s "${HOME}/conda/etc/profile.d/conda.sh" "/etc/profile.d/conda.sh"
 
 # Install the Xeus dependencies
 RUN . "${HOME}/conda/etc/profile.d/conda.sh" \
  && mamba install cppzmq xtl nlohmann_json xeus-zmq -c conda-forge
 
 # Prepare the source directory
-RUN mkdir -p /source/build
+RUN mkdir -p /home/vscode/build
 
 
 
@@ -41,26 +51,28 @@ RUN mkdir -p /source/build
 FROM dev AS build
 
 # Add extra dependencies, if any
+USER root
 RUN apt-get update && apt-get install -y \
     uuid-dev \
  && rm -rf /var/lib/apt/lists/*
+USER vscode
 
 # Build the libxeus library
 RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
- && git clone https://github.com/jupyter-xeus/xeus /xeus \
- && mkdir /xeus/build && cd /xeus/build \
+ && git clone https://github.com/jupyter-xeus/xeus /home/vscode/xeus \
+ && mkdir /home/vscode/xeus/build && cd /home/vscode/xeus/build \
  && cmake -D CMAKE_BUILD_TYPE=Release .. \
  && make \
- && mv $(readlink -e libxeus.so) /libxeus.so.9
+ && mv $(readlink -e libxeus.so) /home/vscode/libxeus.so.9
 
 # Now copy the source
-RUN mkdir -p /source/build
-COPY ./CMakeLists.txt /source/CMakeLists.txt
-COPY ./share /source/share
-COPY ./src /source/src
+RUN mkdir -p /home/vscode/source/build
+COPY --chown=vscode:vscode ./CMakeLists.txt /home/vscode/source/CMakeLists.txt
+COPY --chown=vscode:vscode ./share /home/vscode/source/share
+COPY --chown=vscode:vscode ./src /home/vscode/source/src
 
 # Run the build
-WORKDIR /source/build
+WORKDIR /home/vscode/source/build
 RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
  && cmake -D CMAKE_INSTALL_PREFIX=$CONDA_PREFIX ../ \
  && cmake build . \
@@ -74,8 +86,13 @@ RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
 # Start afresh
 FROM ubuntu:22.04 AS run
 
+# Define the user build args
+ARG UID=1000
+ARG GID=1000
+
 # Create the jupyter user
-RUN useradd -ms /bin/bash brane
+RUN groupadd -g $GID brane \
+ && useradd -m -u $UID -g $GID brane
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -115,14 +132,14 @@ RUN printf '%s\n' "#!/usr/bin/env bash" >> /entrypoint.sh \
  && chmod ugo+x /entrypoint.sh
 
 # Copy libxeus
-COPY --from=build /libxeus.so.9 /usr/local/lib/libxeus.so.9
+COPY --from=build /home/vscode/libxeus.so.9 /usr/local/lib/libxeus.so.9
 RUN ldconfig
 
 # Copy the kernel
-COPY --from=build /source/share/jupyter/kernels/bscript/kernel.json /home/brane/.local/share/jupyter/kernels/bscript/kernel.json
-COPY --from=build /source/share/jupyter/kernels/bscript/logo-32x32.png /home/brane/.local/share/jupyter/kernels/bscript/logo-32x32.png
-COPY --from=build /source/share/jupyter/kernels/bscript/logo-64x64.png /home/brane/.local/share/jupyter/kernels/bscript/logo-64x64.png
-COPY --from=build /source/build/bscript /usr/local/bin/bscript
+COPY --from=build --chown=brane:brane /home/vscode/source/share/jupyter/kernels/bscript/kernel.json /home/brane/.local/share/jupyter/kernels/bscript/kernel.json
+COPY --from=build --chown=brane:brane /home/vscode/source/share/jupyter/kernels/bscript/logo-32x32.png /home/brane/.local/share/jupyter/kernels/bscript/logo-32x32.png
+COPY --from=build --chown=brane:brane /home/vscode/source/share/jupyter/kernels/bscript/logo-64x64.png /home/brane/.local/share/jupyter/kernels/bscript/logo-64x64.png
+COPY --from=build /home/vscode/source/build/bscript /usr/local/bin/bscript
 RUN chmod ugo+x /usr/local/bin/bscript
 
 # Copy-in the brane compiler code
