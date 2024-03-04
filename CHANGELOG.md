@@ -3,14 +3,13 @@
 All notable changes to the JupyterLab IDE extension for the Brane framework will be documented in this file.
 
 
-## [1.0.0] - 2023-06-13
+## [1.0.0] - 2023-10-22
 **IMPORTANT NOTICE**: From now on, `brane-ide` will stick to [semantic versioning](https://semver.org). Any breaking change will be something that would break _notebooks_ run in the `brane-ide`.
 
 ### Changed
-- Everything, and we're now using the [`Xeus`](https://github.com/jupyter-xeus/xeus) backend for direct interfacing with our existing Rust codebase.
-
-### Fixed
-- `Makefile` by removing obsolete and non-working targets.
+- Compatible with Brane [v3.0.0](https://github.com/epi-project/brane/releases/tag/v3.0.0)
+- Everything, and we're now using the [`Xeus`](https://github.com/jupyter-xeus/xeus) backend for direct interfacing with our existing Rust codebase. \[**breaking change**\]
+- Now using `make.py` file instead of `Makefile`. \[**breaking change**\]
 
 
 ## [0.1.2] - 2022-05-30
