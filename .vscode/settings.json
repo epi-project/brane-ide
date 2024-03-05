@@ -4,6 +4,8 @@
         "iostream": "cpp",
         "ostream": "cpp",
         "chrono": "cpp",
-        "iosfwd": "cpp"
+        "iosfwd": "cpp",
+        "system_error": "cpp",
+        "typeinfo": "cpp"
     }
 }

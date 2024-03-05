@@ -5,7 +5,7 @@
 # Created:
 #   02 Aug 2023, 08:38:41
 # Last edited:
-#   04 Mar 2024, 16:11:07
+#   05 Mar 2024, 11:41:48
 # Auto updated?
 #   Yes
 #
@@ -1709,12 +1709,6 @@ class ExtractContainerLogsTarget(Target):
 ##### TARGETS #####
 TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
     ### IMAGES ###
-    ImageTarget("dev-image",
-        "brane-ide-dev",
-        target="dev",
-        build_args={"UID": str(os.getuid()), "GID": str(os.getgid())},
-        description="Builds the development image for the Brane IDE project."
-    ),
     ImageTarget("run-image",
         "brane-ide-server",
         target="run",
@@ -1731,32 +1725,12 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
         ],
         description="Prepares starting the IDE by creating the attached folders."
     ),
-    CopyFileTarget("libbrane_cli",
-        "$libbrane_cli",
-        ".tmp/libbrane_cli.so",
-        description="Copies the `libbrane_cli.so` shared library to a container-accessible location."
-    ),
 
     ### USER TARGETS ###
-    RunContainerTarget("start-dev",
-        "brane-ide-dev",
-        "brane-ide-dev",
-        volumes=[(".", "/source")],
-        entrypoint="sleep",
-        args=[ "infinity" ],
-        deps=["dev-image"],
-        description="Launches the development image for the Brane IDE project. You can connect in this with VS Code's Remote Development extension to access all dependencies."
-    ),
-    RmContainerTarget("stop-dev",
-        "brane-ide-dev",
-        force=True,
-        description="Stops the development image for the Brane IDE project if it is running, and then removes it."
-    ),
-
     RunComposeTarget("start-ide-quiet",
         "./docker-compose.yml",
         namespace="brane-ide",
-        deps=["libbrane_cli", "run-image", "prepare-start-ide"],
+        deps=["run-image", "prepare-start-ide"],
         env={
             **dict(os.environ),
             **{
@@ -1776,6 +1750,7 @@ TARGETS: typing.Dict[str, Target] = { t.id: t for t in [
         ConsecutiveExtract([ MatchedLineExtract("lab?token=", nth=1), MatchNthWordExtract(4) ]),
         strip = True,
         deps=["start-ide-quiet"],
+        timeout=1,
         description="Starts the runtime image for the Brane IDE project without querying the token."
     ),
     RmComposeTarget("stop-ide",
@@ -1950,7 +1925,6 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--arch", choices=Arch.allowed().keys(), default=Arch.default()._arch, help="Determines the architecture for which to download executables and such.")
     parser.add_argument("-o", "--os", choices=Os.allowed().keys(), default=Os.default()._os, help="Determines the operating system for which to download executables and such.")
 
-    parser.add_argument("-L", "--libbrane-path", default="./libbrane_cli.so", help="The path to the shared Brane CLI library.")
     parser.add_argument("-1", "--brane-api", default=get_default_api_addr(), help="The address of the Brane API service to connect to.")
     parser.add_argument("-2", "--brane-drv", default=get_default_drv_addr(), help="The address of the Brane driver service to connect to.")
     parser.add_argument("-3", "--brane-data-dir", default="./data", help="The notebook directory to map in the IDE container.")
@@ -1971,7 +1945,6 @@ if __name__ == "__main__":
     # Set the globals
     DEBUG = args.debug
     TARGET_ARGS["debug"] = "1" if DEBUG else "0"
-    TARGET_ARGS["libbrane_cli"] = args.libbrane_path
     TARGET_ARGS["brane_api"] = args.brane_api
     TARGET_ARGS["brane_drv"] = args.brane_drv
     TARGET_ARGS["brane_data_dir"] = args.brane_data_dir

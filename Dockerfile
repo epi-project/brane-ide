@@ -10,69 +10,97 @@
 #
 
 
-##### DEV ENV IMAGE #####
-# We build on C++
-FROM ubuntu:22.04 AS dev
+##### RUST BUILD IMAGE #####
+FROM ubuntu:22.04 AS build-rust
 
-# Define the user build args
+# Define the build args
 ARG UID=1000
 ARG GID=1000
+ARG BRANE_VERSION=develop
+
+# Setup a user to run as
+RUN groupadd -g $GID bob \
+ && useradd -m -u $UID -g $GID bob
+
+# Install additional dependencies
+RUN apt-get update && apt-get install -y \
+    curl git g++ cmake \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install rust
+USER bob
+ADD --chown=bob:bob https://sh.rustup.rs /home/bob/rustup.sh
+RUN sh /home/bob/rustup.sh -y --profile minimal
+
+# Download Rust
+RUN git clone https://github.com/epi-project/brane /home/bob/brane \
+ && cd /home/bob/brane && git checkout $BRANE_VERSION
+
+# Compile the binary
+RUN --mount=type=cache,uid=$UID,id=cargoidx,target=/home/bob/.cargo/registry \
+    --mount=type=cache,uid=$UID,id=libbraneclicache,target=/home/bob/brane/target \
+    . /home/bob/.cargo/env && cd /home/bob/brane \
+ && cargo build --release --package brane-cli-c \
+ && mv target/release/libbrane_cli.so /home/bob/libbrane_cli.so
+
+
+
+
+
+##### C++ BUILD IMAGE #####
+FROM ubuntu:22.04 AS build-cpp
+
+# Define the build args
+ARG UID=1000
+ARG GID=1000
+ARG XEUS_VERSION=3.2.0
+
+# Now setup a user to run as
+RUN groupadd -g $GID bob \
+ && useradd -m -u $UID -g $GID bob
 
 # Install the dependencies we need
 RUN apt-get update && apt-get install -y \
     gcc g++ cmake git \
- && rm -rf /var/lib/apt/lists/*
-
-# Now setup a user to run as as VSCODE
-RUN groupadd -g $GID vscode \
- && useradd -m -u $UID -g $GID vscode
-
-# Install mamba
-ADD https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh /home/vscode/Mambaforge.sh
-RUN chown vscode:vscode /home/vscode/Mambaforge.sh
-
-USER vscode
-RUN bash /home/vscode/Mambaforge.sh -b -p "${HOME}/conda"
-#  && ln -s "${HOME}/conda/etc/profile.d/conda.sh" "/etc/profile.d/conda.sh"
-
-# Install the Xeus dependencies
-RUN . "${HOME}/conda/etc/profile.d/conda.sh" \
- && mamba install cppzmq xtl nlohmann_json xeus-zmq -c conda-forge
-
-# Prepare the source directory
-RUN mkdir -p /home/vscode/build
-
-
-
-
-
-##### BUILD IMAGE #####
-# Pickup where we leftoff
-FROM dev AS build
-
-# Add extra dependencies, if any
-USER root
-RUN apt-get update && apt-get install -y \
     uuid-dev \
  && rm -rf /var/lib/apt/lists/*
-USER vscode
+
+# Install mamba
+USER bob
+ADD --chown=bob:bob https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh /home/bob/Mambaforge.sh
+RUN bash /home/bob/Mambaforge.sh -b -p "${HOME}/conda"
+#  && ln -s "${HOME}/conda/etc/profile.d/conda.sh" "/etc/profile.d/conda.sh"
+
+
+# Install the Xeus dependencies
+# RUN . "${HOME}/conda/etc/profile.d/conda.sh" \
+#  && mamba install cppzmq xtl nlohmann_json xeus-zmq libuuid -c conda-forge
+RUN . "${HOME}/conda/etc/profile.d/conda.sh" \
+ && mamba install xtl nlohmann_json -c conda-forge
 
 # Build the libxeus library
 RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
- && git clone https://github.com/jupyter-xeus/xeus /home/vscode/xeus \
- && mkdir /home/vscode/xeus/build && cd /home/vscode/xeus/build \
+ && git clone https://github.com/jupyter-xeus/xeus /home/bob/xeus \
+ && cd /home/bob/xeus && git checkout $XEUS_VERSION \
+ && mkdir build && cd build \
  && cmake -D CMAKE_BUILD_TYPE=Release .. \
  && make \
- && mv $(readlink -e libxeus.so) /home/vscode/libxeus.so.9
+ && mv $(readlink -e libxeus.so) /home/bob/libxeus.so.9 \
+ && cd .. && rm -rf build
+
+
+# Install our lib's dependencies
+RUN . "${HOME}/conda/etc/profile.d/conda.sh" \
+ && mamba install cppzmq xeus-zmq -c conda-forge
 
 # Now copy the source
-RUN mkdir -p /home/vscode/source/build
-COPY --chown=vscode:vscode ./CMakeLists.txt /home/vscode/source/CMakeLists.txt
-COPY --chown=vscode:vscode ./share /home/vscode/source/share
-COPY --chown=vscode:vscode ./src /home/vscode/source/src
+RUN mkdir -p /home/bob/source/build
+COPY --chown=bob:bob ./CMakeLists.txt /home/bob/source/CMakeLists.txt
+COPY --chown=bob:bob ./share /home/bob/source/share
+COPY --chown=bob:bob ./src /home/bob/source/src
 
 # Run the build
-WORKDIR /home/vscode/source/build
+WORKDIR /home/bob/source/build
 RUN . "${HOME}/conda/etc/profile.d/conda.sh" && conda activate \
  && cmake -D CMAKE_INSTALL_PREFIX=$CONDA_PREFIX ../ \
  && cmake build . \
@@ -132,18 +160,18 @@ RUN printf '%s\n' "#!/usr/bin/env bash" >> /entrypoint.sh \
  && chmod ugo+x /entrypoint.sh
 
 # Copy libxeus
-COPY --from=build /home/vscode/libxeus.so.9 /usr/local/lib/libxeus.so.9
+COPY --from=build-cpp /home/bob/libxeus.so.9 /usr/local/lib/libxeus.so.9
 RUN ldconfig
 
 # Copy the kernel
-COPY --from=build --chown=brane:brane /home/vscode/source/share/jupyter/kernels/bscript/kernel.json /home/brane/.local/share/jupyter/kernels/bscript/kernel.json
-COPY --from=build --chown=brane:brane /home/vscode/source/share/jupyter/kernels/bscript/logo-32x32.png /home/brane/.local/share/jupyter/kernels/bscript/logo-32x32.png
-COPY --from=build --chown=brane:brane /home/vscode/source/share/jupyter/kernels/bscript/logo-64x64.png /home/brane/.local/share/jupyter/kernels/bscript/logo-64x64.png
-COPY --from=build /home/vscode/source/build/bscript /usr/local/bin/bscript
+COPY --from=build-cpp --chown=brane:brane /home/bob/source/share/jupyter/kernels/bscript/kernel.json /home/brane/.local/share/jupyter/kernels/bscript/kernel.json
+COPY --from=build-cpp --chown=brane:brane /home/bob/source/share/jupyter/kernels/bscript/logo-32x32.png /home/brane/.local/share/jupyter/kernels/bscript/logo-32x32.png
+COPY --from=build-cpp --chown=brane:brane /home/bob/source/share/jupyter/kernels/bscript/logo-64x64.png /home/brane/.local/share/jupyter/kernels/bscript/logo-64x64.png
+COPY --from=build-cpp /home/bob/source/build/bscript /usr/local/bin/bscript
 RUN chmod ugo+x /usr/local/bin/bscript
 
 # Copy-in the brane compiler code
-COPY .tmp/libbrane_cli.so /libbrane_cli.so
+COPY --from=build-rust /home/bob/libbrane_cli.so /libbrane_cli.so
 
 # Set the entrypoint and done
 WORKDIR /
